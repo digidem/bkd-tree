@@ -11,8 +11,7 @@ function KD (storage, opts) {
   this.staging = []
   this.trees = []
   this.branchFactor = opts.branchFactor || 4
-  //this.N = Math.pow(this.branchFactor,5)-1
-  this.N = Math.pow(this.branchFactor,2)-1
+  this.N = Math.pow(this.branchFactor,5)-1
 }
 
 KD.prototype.batch = function (rows, cb) {
