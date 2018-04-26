@@ -76,16 +76,20 @@ KD.prototype.query = function (query, cb) {
         range[0][0] = -Infinity
         for (var k = 0; k < B-1; k++) {
           var p = parse(t,(ix+k)*12)
-          if (p === null) continue
-          range[0][1] = p[axis]
-          if (overlapTest(range,qrange)) {
-            nextIndexes.push(calcIndex(B, ix, k))
-          }
+          if (!p) continue
           if (p[0] >= q[0][0] && p[0] <= q[0][1]
           && p[1] >= q[1][0] && p[1] <= q[1][1]) {
             results.push(p)
           }
+          range[0][1] = p[axis]
+          if (overlapTest(range,qrange)) {
+            nextIndexes.push(calcIndex(B, ix, k))
+          }
           range[0][0] = p[axis]
+        }
+        range[0][1] = +Infinity
+        if (overlapTest(range,qrange)) {
+          nextIndexes.push(calcIndex(B, ix, k))
         }
       }
       indexes = nextIndexes
