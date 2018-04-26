@@ -1,10 +1,13 @@
 var test = require('tape')
 var approxEq = require('approximately-equal')
 var umkd = require('../')
+var ram = require('random-access-memory')
+
+function storage (name, cb) { cb(null, ram()) }
 
 test('batch', function (t) {
   var N = 5000
-  var bkd = umkd(null, { branchFactor: 4 })
+  var bkd = umkd(storage, { branchFactor: 4 })
   var batch = []
   for (var i = 0; i < N; i++) {
     var x = Math.random()*2-1

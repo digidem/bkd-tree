@@ -6,23 +6,45 @@ var overlapTest = require('bounding-box-overlap-test')
 module.exports = KD
 
 function KD (storage, opts) {
+  var self = this
   if (!(this instanceof KD)) return new KD(storage, opts)
-  this.storage = storage
-  this.staging = []
-  this.trees = []
-  this.branchFactor = opts.branchFactor || 4
-  this.N = Math.pow(this.branchFactor,5)-1
+  self.storage = storage
+  self.staging = []
+  self.trees = []
+  self.branchFactor = opts.branchFactor || 4
+  self.N = Math.pow(this.branchFactor,5)-1
+  self.meta = null
+  self._error = null
+  self._ready = []
+  storage('meta', function (err, r) {
+    r.read(0, 1024, function (err, buf) {
+      if (buf) {
+        try { self.meta = JSON.parse(buf) }
+        catch (err) { self._error = err }
+      } else {
+        self.meta = {}
+      }
+      for (var i = 0; i < self._ready.length; i++) {
+        self._ready[i]()
+      }
+    })
+  })
+}
+
+KD.prototype.ready = function (cb) {
+  if (this.meta) cb(this._error)
+  else this._ready.push(cb)
 }
 
 KD.prototype.batch = function (rows, cb) {
   var self = this
-  for (var i = 0; i < rows.length; i++) {
-    this.staging.push(rows[i])
-    if (this.staging.length === this.N) {
-      this._flush()
+  self.ready(function () {
+    for (var i = 0; i < rows.length; i++) {
+      self.staging.push(rows[i])
+      if (self.staging.length === self.N) self._flush()
     }
-  }
-  cb()
+    cb()
+  })
 }
 
 KD.prototype._flush = function (cb) {
@@ -38,22 +60,26 @@ KD.prototype._flush = function (cb) {
   var B = this.branchFactor
   var n = Math.pow(B,Math.ceil(Math.log(rows.length+1)/Math.log(B)))-1
   var buffer = Buffer.alloc(n*12)
-
   build(rows, {
     branchFactor: B,
-    write: write
+    write: function (index, pt) {
+      buffer.writeFloatBE(pt[0], index*12+0)
+      buffer.writeFloatBE(pt[1], index*12+4)
+      buffer.writeUInt32BE(pt[2], index*12+8)
+    }
   })
   this.trees[i] = buffer
   this.staging = []
-
-  function write (index, pt) {
-    buffer.writeFloatBE(pt[0], index*12+0)
-    buffer.writeFloatBE(pt[1], index*12+4)
-    buffer.writeUInt32BE(pt[2], index*12+8)
-  }
 }
 
 KD.prototype.query = function (query, cb) {
+  var self = this
+  self.ready(function () {
+    self._query(query, cb)
+  })
+}
+
+KD.prototype._query = function (query, cb) {
   var q = [[query[0],query[2]],[query[1],query[3]]]
   var B = this.branchFactor
   var results = []
