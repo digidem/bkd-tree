@@ -12,4 +12,9 @@ for (var i = 0; i < N; i++) {
 
 bkd.batch(batch, function (err) {
   if (err) console.error(err)
+  var bbox = process.argv.slice(4).map(Number)
+  bkd.query(bbox, function (err, values) {
+    if (err) console.error(err)
+    else console.log(values)
+  })
 })

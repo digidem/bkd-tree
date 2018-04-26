@@ -1,5 +1,7 @@
 var build = require('./lib/build.js')
 var unbuild = require('./lib/unbuild.js')
+var calcIndex = require('./lib/calc-index.js')
+var overlapTest = require('bounding-box-overlap-test')
 
 module.exports = KD
 
@@ -34,7 +36,7 @@ KD.prototype._flush = function (cb) {
     }))
     this.trees[i] = null
   }
-  var B = 4
+  var B = this.branchFactor
   var n = Math.pow(B,Math.ceil(Math.log(rows.length+1)/Math.log(B)))-1
   var buffer = Buffer.alloc(n*12)
 
@@ -44,28 +46,60 @@ KD.prototype._flush = function (cb) {
   })
   this.trees[i] = buffer
   this.staging = []
-  console.log(this.trees.map(function (t) {
-    return t ? t.length/12 : 0
-  }).join(' '))
 
   function write (index, pt) {
     buffer.writeFloatBE(pt[0], index*12+0)
     buffer.writeFloatBE(pt[1], index*12+4)
     buffer.writeUInt32BE(pt[2], index*12+8)
   }
-  function parse (buffer, offset) {
-    var id = buffer.readUInt32BE(offset+8)
-    if (id === 0) return null
-    return [
-      buffer.readFloatBE(offset+0),
-      buffer.readFloatBE(offset+4),
-      id
-    ]
-  }
-}
-
-KD.prototype.ready = function (cb) {
 }
 
 KD.prototype.query = function (query, cb) {
+  var q = [[query[0],query[2]],[query[1],query[3]]]
+  var B = this.branchFactor
+  var results = []
+  for (var i = 0; i < this.trees.length; i++) {
+    var t = this.trees[i]
+    if (!t) continue
+    var maxDepth = Math.ceil(Math.log(t.length/12+1)/Math.log(B))
+    var indexes = [0]
+    var depth = 0
+    var range = [[0,0]]
+    var qrange = [null]
+    for (var depth = 0; depth < maxDepth; depth++) {
+      if (indexes.length === 0) break
+      var axis = depth % 2
+      qrange[0] = q[axis]
+      var nextIndexes = []
+      for (var j = 0; j < indexes.length; j++) {
+        var ix = indexes[j]
+        range[0][0] = -Infinity
+        for (var k = 0; k < B-1; k++) {
+          var p = parse(t,(ix+k)*12)
+          if (p === null) continue
+          range[0][1] = p[axis]
+          if (overlapTest(range,qrange)) {
+            nextIndexes.push(calcIndex(B, ix, k))
+          }
+          if (p[0] >= q[0][0] && p[0] <= q[0][1]
+          && p[1] >= q[1][0] && p[1] <= q[1][1]) {
+            results.push(p)
+          }
+          range[0][0] = p[axis]
+        }
+      }
+      indexes = nextIndexes
+    }
+  }
+  cb(null, results)
+}
+
+function parse (buffer, offset) {
+  var id = buffer.readUInt32BE(offset+8)
+  if (id === 0) return null
+  return [
+    buffer.readFloatBE(offset+0),
+    buffer.readFloatBE(offset+4),
+    id
+  ]
 }
