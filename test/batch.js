@@ -3,7 +3,7 @@ var approxEq = require('approximately-equal')
 var umkd = require('../')
 
 test('batch', function (t) {
-  var N = 100
+  var N = 1000
   var bkd = umkd(null, { branchFactor: 4 })
   var batch = []
   for (var i = 0; i < N; i++) {
@@ -11,7 +11,7 @@ test('batch', function (t) {
     var y = Math.random()*2-1
     batch.push([x,y,i+1]) // float32, float32, uint32
   }
-  var bbox = [-0.9,-0.7,-0.2,-0.1]
+  var bbox = [-0.9,-0.7,-0.8,-0.5]
   var expected = batch.filter(function (b) {
     return b[0] > bbox[0] && b[0] < bbox[2]
       && b[1] > bbox[1] && b[1] < bbox[3]
@@ -24,9 +24,6 @@ test('batch', function (t) {
       t.error(err)
       var ids = values.map(function (p) { return p[2] }).sort()
       var exids = expected.map(function (p) { return p[2] }).sort()
-      console.log(values.sort(cmp))
-      console.log('---')
-      console.log(expected.sort(cmp))
       t.deepEqual(ids, exids, 'ids match')
       expected.sort(cmp)
       values.sort(cmp)

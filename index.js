@@ -58,7 +58,14 @@ KD.prototype.query = function (query, cb) {
   var q = [[query[0],query[2]],[query[1],query[3]]]
   var B = this.branchFactor
   var results = []
-  for (var i = 0; i < this.trees.length; i++) {
+  for (var i = 0; i < this.staging.length; i++) {
+    var p = this.staging[i]
+    if (p[0] >= q[0][0] && p[0] <= q[0][1]
+    && p[1] >= q[1][0] && p[1] <= q[1][1]) {
+      results.push(p)
+    }
+  }
+  for (var i = -1; i < this.trees.length; i++) {
     var t = this.trees[i]
     if (!t) continue
     var maxDepth = Math.ceil(Math.log(t.length/12+1)/Math.log(B))
