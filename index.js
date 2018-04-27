@@ -7,41 +7,64 @@ module.exports = KD
 
 function KD (storage, opts) {
   var self = this
-  if (!(this instanceof KD)) return new KD(storage, opts)
+  if (!(self instanceof KD)) return new KD(storage, opts)
   self.storage = storage
-  self.staging = []
+  self.staging = null
   self.trees = []
   self.branchFactor = opts.branchFactor || 4
-  self.N = Math.pow(this.branchFactor,5)-1
+  self.N = Math.pow(self.branchFactor,5)-1
   self.meta = null
   self._error = null
   self._ready = []
-  storage('meta', function (err, r) {
+  self._init()
+}
+
+KD.prototype._init = function () {
+  var self = this
+  var pending = 2
+  self.storage('staging', function (err, r) {
+    r.read(0, self.N+4, function (err, buf) {
+      if (!buf) buf = Buffer.alloc(4+self.N*12)
+      self.staging = {
+        count: buf.readUInt32BE(0),
+        buffer: buf
+      }
+      if (--pending === 0) done()
+    })
+  })
+  self.storage('meta', function (err, r) {
     r.read(0, 1024, function (err, buf) {
       if (buf) {
         try { self.meta = JSON.parse(buf) }
         catch (err) { self._error = err }
       } else {
-        self.meta = {}
+        self.meta = { bitfield: 0 }
       }
-      for (var i = 0; i < self._ready.length; i++) {
-        self._ready[i]()
-      }
+      if (--pending === 0) done()
     })
   })
+  function done () {
+    for (var i = 0; i < self._ready.length; i++) {
+      self._ready[i]()
+    }
+  }
 }
 
 KD.prototype.ready = function (cb) {
-  if (this.meta) cb(this._error)
-  else this._ready.push(cb)
+  if (this._ready) this._ready.push(cb)
+  else cb(this._error)
 }
 
 KD.prototype.batch = function (rows, cb) {
   var self = this
   self.ready(function () {
     for (var i = 0; i < rows.length; i++) {
-      self.staging.push(rows[i])
-      if (self.staging.length === self.N) self._flush()
+      var pt = rows[i]
+      var index = 4+(self.staging.count++)*12
+      self.staging.buffer.writeFloatBE(pt[0], index+0)
+      self.staging.buffer.writeFloatBE(pt[1], index+4)
+      self.staging.buffer.writeUInt32BE(pt[2], index+8)
+      if (self.staging.count === self.N) self._flush()
     }
     cb()
   })
@@ -49,12 +72,16 @@ KD.prototype.batch = function (rows, cb) {
 
 KD.prototype._flush = function (cb) {
   var trees = []
-  var rows = this.staging
+  var rows = []
+  for (var i = 0; i < this.staging.count; i++) {
+    rows.push([
+      this.staging.buffer.readFloatBE(4+i*12+0),
+      this.staging.buffer.readFloatBE(4+i*12+4),
+      this.staging.buffer.readUInt32BE(4+i*12+8)
+    ])
+  }
   for (var i = 0; this.trees[i]; i++) {
-    rows = rows.concat(unbuild(this.trees[i], {
-      size: 12,
-      parse: parse
-    }))
+    rows = rows.concat(unbuild(this.trees[i], { size: 12, parse: parse }))
     this.trees[i] = null
   }
   var B = this.branchFactor
@@ -69,7 +96,7 @@ KD.prototype._flush = function (cb) {
     }
   })
   this.trees[i] = buffer
-  this.staging = []
+  this.staging.count = 0
 }
 
 KD.prototype.query = function (query, cb) {
@@ -83,8 +110,12 @@ KD.prototype._query = function (query, cb) {
   var q = [[query[0],query[2]],[query[1],query[3]]]
   var B = this.branchFactor
   var results = []
-  for (var i = 0; i < this.staging.length; i++) {
-    var p = this.staging[i]
+  for (var i = 0; i < this.staging.count; i++) {
+    var p = [
+      this.staging.buffer.readFloatBE(4+i*12+0),
+      this.staging.buffer.readFloatBE(4+i*12+4),
+      this.staging.buffer.readUInt32BE(4+i*12+8)
+    ]
     if (p[0] >= q[0][0] && p[0] <= q[0][1]
     && p[1] >= q[1][0] && p[1] <= q[1][1]) {
       results.push(p)

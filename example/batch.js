@@ -1,4 +1,7 @@
-var bkd = require('../')(null, {
+var ram = require('random-access-memory')
+function storage (name, cb) { cb(null,ram()) }
+
+var bkd = require('../')(storage, {
   branchFactor: Number(process.argv[2])
 })
 
