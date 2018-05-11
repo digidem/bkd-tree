@@ -82,7 +82,7 @@ KD.prototype._flush = function (cb) {
     ])
   }
   for (var i = 0; this.bitfield[i]; i++) {
-    rows = rows.concat(unbuild(this.trees[i], { size: 12, parse: parse }))
+    rows = rows.concat(unbuild(this.trees[i].buffer, { size: 12, parse: parse }))
     this.bitfield[i] = false
   }
   var B = this.branchFactor
@@ -96,7 +96,7 @@ KD.prototype._flush = function (cb) {
       buffer.writeUInt32BE(pt[2], index*12+8)
     }
   })
-  this.trees[i] = buffer
+  this.trees[i] = { buffer: buffer, size: n }
   this.bitfield[i] = true
   this.staging.count = 0
 }
@@ -132,44 +132,48 @@ KD.prototype._query = function (query, cb) {
         results.push(p)
       }
     }
-    for (var i = 0; i < self.trees.length; i++) {
-      if (!self.bitfield[i]) continue
-      var t = self.trees[i]
-      var maxDepth = Math.ceil(Math.log(t.length/12+1)/Math.log(B))
-      var indexes = [0]
-      var depth = 0
-      var range = [[0,0]]
-      var qrange = [null]
-      for (var depth = 0; depth < maxDepth; depth++) {
-        if (indexes.length === 0) break
-        var axis = depth % 2
-        qrange[0] = q[axis]
-        var nextIndexes = []
-        for (var j = 0; j < indexes.length; j++) {
-          var ix = indexes[j]
-          range[0][0] = -Infinity
-          for (var k = 0; k < B-1; k++) {
-            var p = parse(t,(ix+k)*12)
-            if (!p) continue
-            if (p[0] >= q[0][0] && p[0] <= q[0][1]
-            && p[1] >= q[1][0] && p[1] <= q[1][1]) {
-              results.push(p)
+    var pending = 1
+    for (var i = 0; i < self.trees.length; i++) (function (i) {
+      if (!self.bitfield[i]) return
+      pending++
+      self._getTree(i, function (err, t) {
+        var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
+        var indexes = [0]
+        var depth = 0
+        var range = [[0,0]]
+        var qrange = [null]
+        for (var depth = 0; depth < maxDepth; depth++) {
+          if (indexes.length === 0) break
+          var axis = depth % 2
+          qrange[0] = q[axis]
+          var nextIndexes = []
+          for (var j = 0; j < indexes.length; j++) {
+            var ix = indexes[j]
+            range[0][0] = -Infinity
+            for (var k = 0; k < B-1; k++) {
+              var p = parse(t.buffer,(ix+k)*12)
+              if (!p) continue
+              if (p[0] >= q[0][0] && p[0] <= q[0][1]
+              && p[1] >= q[1][0] && p[1] <= q[1][1]) {
+                results.push(p)
+              }
+              range[0][1] = p[axis]
+              if (overlapTest(range,qrange)) {
+                nextIndexes.push(calcIndex(B, ix, k))
+              }
+              range[0][0] = p[axis]
             }
-            range[0][1] = p[axis]
+            range[0][1] = +Infinity
             if (overlapTest(range,qrange)) {
               nextIndexes.push(calcIndex(B, ix, k))
             }
-            range[0][0] = p[axis]
           }
-          range[0][1] = +Infinity
-          if (overlapTest(range,qrange)) {
-            nextIndexes.push(calcIndex(B, ix, k))
-          }
+          indexes = nextIndexes
         }
-        indexes = nextIndexes
-      }
-    }
-    cb(null, results)
+        if (--pending === 0) cb(null, results)
+      })
+    })(i)
+    if (--pending === 0) cb(null, results)
   })
 }
 
