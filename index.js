@@ -11,6 +11,7 @@ function KD (storage, opts) {
   self.storage = storage
   self.staging = null
   self.trees = []
+  self.bitfield = []
   self.branchFactor = opts.branchFactor || 4
   self.N = Math.pow(self.branchFactor,5)-1
   self.meta = null
@@ -80,9 +81,9 @@ KD.prototype._flush = function (cb) {
       this.staging.buffer.readUInt32BE(4+i*12+8)
     ])
   }
-  for (var i = 0; this.trees[i]; i++) {
+  for (var i = 0; this.bitfield[i]; i++) {
     rows = rows.concat(unbuild(this.trees[i], { size: 12, parse: parse }))
-    this.trees[i] = null
+    this.bitfield[i] = false
   }
   var B = this.branchFactor
   var n = Math.pow(B,Math.ceil(Math.log(rows.length+1)/Math.log(B)))-1
@@ -96,6 +97,7 @@ KD.prototype._flush = function (cb) {
     }
   })
   this.trees[i] = buffer
+  this.bitfield[i] = true
   this.staging.count = 0
 }
 
@@ -122,8 +124,8 @@ KD.prototype._query = function (query, cb) {
     }
   }
   for (var i = -1; i < this.trees.length; i++) {
+    if (!this.bitfield[i]) continue
     var t = this.trees[i]
-    if (!t) continue
     var maxDepth = Math.ceil(Math.log(t.length/12+1)/Math.log(B))
     var indexes = [0]
     var depth = 0
