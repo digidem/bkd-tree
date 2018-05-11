@@ -24,7 +24,7 @@ KD.prototype._init = function () {
   var self = this
   var pending = 2
   self.storage('staging', function (err, r) {
-    r.read(0, self.N+4, function (err, buf) {
+    r.read(0, 4+self.N*12, function (err, buf) {
       if (!buf) buf = Buffer.alloc(4+self.N*12)
       self.staging = {
         storage: r,
