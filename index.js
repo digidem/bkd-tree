@@ -48,6 +48,7 @@ KD.prototype._init = function () {
     for (var i = 0; i < self._ready.length; i++) {
       self._ready[i]()
     }
+    self._ready = null
   }
 }
 
@@ -58,53 +59,84 @@ KD.prototype.ready = function (cb) {
 
 KD.prototype.batch = function (rows, cb) {
   var self = this
-  self.ready(function () {
-    for (var i = 0; i < rows.length; i++) {
+  var i = 0
+  self.ready(function write () {
+    for (; i < rows.length; i++) {
       var pt = rows[i]
       var index = 4+(self.staging.count++)*12
       self.staging.buffer.writeFloatBE(pt[0], index+0)
       self.staging.buffer.writeFloatBE(pt[1], index+4)
       self.staging.buffer.writeUInt32BE(pt[2], index+8)
-      if (self.staging.count === self.N) self._flush()
+      if (self.staging.count === self.N) {
+        self._flush(function () {
+          i++
+          write()
+        })
+        return
+      }
     }
     cb()
   })
 }
 
 KD.prototype._flush = function (cb) {
-  var trees = []
+  var self = this
   var rows = []
-  for (var i = 0; i < this.staging.count; i++) {
+  for (var i = 0; i < self.staging.count; i++) {
     rows.push([
-      this.staging.buffer.readFloatBE(4+i*12+0),
-      this.staging.buffer.readFloatBE(4+i*12+4),
-      this.staging.buffer.readUInt32BE(4+i*12+8)
+      self.staging.buffer.readFloatBE(4+i*12+0),
+      self.staging.buffer.readFloatBE(4+i*12+4),
+      self.staging.buffer.readUInt32BE(4+i*12+8)
     ])
   }
-  for (var i = 0; this.bitfield[i]; i++) {
-    rows = rows.concat(unbuild(this.trees[i].buffer, { size: 12, parse: parse }))
-    this.bitfield[i] = false
+  var pending = 1
+  for (var i = 0; self.bitfield[i]; i++) {
+    pending++
+    var t = self.trees[i]
+    self.bitfield[i] = false
+    t.storage.read(0, t.size*12, function (err, buf) {
+      if (!buf) buf = Buffer.alloc(t.size*12)
+      rows = rows.concat(unbuild(buf, { size: 12, parse: parse }))
+      if (--pending === 0) done()
+    })
   }
-  var B = this.branchFactor
-  var n = Math.pow(B,Math.ceil(Math.log(rows.length+1)/Math.log(B)))-1
-  var buffer = Buffer.alloc(n*12)
-  build(rows, {
-    branchFactor: B,
-    write: function (index, pt) {
-      buffer.writeFloatBE(pt[0], index*12+0)
-      buffer.writeFloatBE(pt[1], index*12+4)
-      buffer.writeUInt32BE(pt[2], index*12+8)
-    }
-  })
-  this.trees[i] = { buffer: buffer, size: n }
-  this.bitfield[i] = true
-  this.staging.count = 0
+  if (--pending === 0) done()
+
+  function done () {
+    var B = self.branchFactor
+    var n = Math.pow(B,Math.ceil(Math.log(rows.length+1)/Math.log(B)))-1
+    var buffer = Buffer.alloc(n*12)
+    build(rows, {
+      branchFactor: B,
+      write: function (index, pt) {
+        buffer.writeFloatBE(pt[0], index*12+0)
+        buffer.writeFloatBE(pt[1], index*12+4)
+        buffer.writeUInt32BE(pt[2], index*12+8)
+      }
+    })
+    self._getTree(i, function (err, t) {
+      if (err) return cb(err)
+      self.trees[i].size = buffer.length/12
+      t.storage.write(0, buffer, function (err) {
+        self.bitfield[i] = true
+        self.staging.count = 0
+        cb()
+      })
+    })
+  }
 }
 
 KD.prototype._getTree = function (i, cb) {
   var self = this
+  var size = 0
+  for (var j = 0; j < i; j++) size += self.N * Math.pow(2,j)
   self.ready(function () {
-    cb(null, self.trees[i])
+    if (self.trees[i]) cb(null, self.trees[i])
+    else self.storage('tree'+i, function (err, s) {
+      if (err) return cb(err)
+      self.trees[i] = { storage: s, size: size }
+      cb(null, self.trees[i])
+    })
   })
 }
 
@@ -137,40 +169,43 @@ KD.prototype._query = function (query, cb) {
       if (!self.bitfield[i]) return
       pending++
       self._getTree(i, function (err, t) {
-        var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
-        var indexes = [0]
-        var depth = 0
-        var range = [[0,0]]
-        var qrange = [null]
-        for (var depth = 0; depth < maxDepth; depth++) {
-          if (indexes.length === 0) break
-          var axis = depth % 2
-          qrange[0] = q[axis]
-          var nextIndexes = []
-          for (var j = 0; j < indexes.length; j++) {
-            var ix = indexes[j]
-            range[0][0] = -Infinity
-            for (var k = 0; k < B-1; k++) {
-              var p = parse(t.buffer,(ix+k)*12)
-              if (!p) continue
-              if (p[0] >= q[0][0] && p[0] <= q[0][1]
-              && p[1] >= q[1][0] && p[1] <= q[1][1]) {
-                results.push(p)
+        t.storage.read(0, t.size*12, function (err, buf) {
+          if (!buf) buf = Buffer.alloc(t.size*12)
+          var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
+          var indexes = [0]
+          var depth = 0
+          var range = [[0,0]]
+          var qrange = [null]
+          for (var depth = 0; depth < maxDepth; depth++) {
+            if (indexes.length === 0) break
+            var axis = depth % 2
+            qrange[0] = q[axis]
+            var nextIndexes = []
+            for (var j = 0; j < indexes.length; j++) {
+              var ix = indexes[j]
+              range[0][0] = -Infinity
+              for (var k = 0; k < B-1; k++) {
+                var p = parse(buf,(ix+k)*12)
+                if (!p) continue
+                if (p[0] >= q[0][0] && p[0] <= q[0][1]
+                && p[1] >= q[1][0] && p[1] <= q[1][1]) {
+                  results.push(p)
+                }
+                range[0][1] = p[axis]
+                if (overlapTest(range,qrange)) {
+                  nextIndexes.push(calcIndex(B, ix, k))
+                }
+                range[0][0] = p[axis]
               }
-              range[0][1] = p[axis]
+              range[0][1] = +Infinity
               if (overlapTest(range,qrange)) {
                 nextIndexes.push(calcIndex(B, ix, k))
               }
-              range[0][0] = p[axis]
             }
-            range[0][1] = +Infinity
-            if (overlapTest(range,qrange)) {
-              nextIndexes.push(calcIndex(B, ix, k))
-            }
+            indexes = nextIndexes
           }
-          indexes = nextIndexes
-        }
-        if (--pending === 0) cb(null, results)
+          if (--pending === 0) cb(null, results)
+        })
       })
     })(i)
     if (--pending === 0) cb(null, results)
