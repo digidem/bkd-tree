@@ -2,6 +2,7 @@ var build = require('./lib/build.js')
 var unbuild = require('./lib/unbuild.js')
 var calcIndex = require('./lib/calc-index.js')
 var overlapTest = require('bounding-box-overlap-test')
+var once = require('once')
 
 module.exports = KD
 
@@ -34,6 +35,7 @@ KD.prototype._init = function () {
     })
   })
   self.storage('meta', function (err, r) {
+    self.metaStorage = r
     r.read(0, 1024, function (err, buf) {
       if (buf) {
         try { self.meta = JSON.parse(buf) }
@@ -58,6 +60,7 @@ KD.prototype.ready = function (cb) {
 }
 
 KD.prototype.batch = function (rows, cb) {
+  cb = once(cb || noop)
   var self = this
   var i = 0
   self.ready(function write () {
@@ -76,7 +79,14 @@ KD.prototype.batch = function (rows, cb) {
       }
     }
     self.staging.buffer.writeUInt32BE(self.staging.count, 0)
-    self.staging.storage.write(0, self.staging.buffer, cb)
+    var pending = 2
+    self.staging.storage.write(0, self.staging.buffer, done)
+    var metaBuf = Buffer.from(JSON.stringify(self.meta))
+    self.metaStorage.write(0, metaBuf, done)
+    function done (err) {
+      if (err) return cb(err)
+      else if (--pending === 0) cb()
+    }
   })
 }
 
@@ -142,6 +152,7 @@ KD.prototype._getTree = function (i, cb) {
 }
 
 KD.prototype.query = function (query, cb) {
+  cb = once(cb || noop)
   var self = this
   self.ready(function () {
     self._query(query, cb)
@@ -222,3 +233,5 @@ function parse (buffer, offset) {
     id
   ]
 }
+
+function noop () {}
