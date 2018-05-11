@@ -101,6 +101,13 @@ KD.prototype._flush = function (cb) {
   this.staging.count = 0
 }
 
+KD.prototype._getTree = function (i, cb) {
+  var self = this
+  self.ready(function () {
+    cb(null, self.trees[i])
+  })
+}
+
 KD.prototype.query = function (query, cb) {
   var self = this
   self.ready(function () {
@@ -109,58 +116,61 @@ KD.prototype.query = function (query, cb) {
 }
 
 KD.prototype._query = function (query, cb) {
+  var self = this
   var q = [[query[0],query[2]],[query[1],query[3]]]
-  var B = this.branchFactor
-  var results = []
-  for (var i = 0; i < this.staging.count; i++) {
-    var p = [
-      this.staging.buffer.readFloatBE(4+i*12+0),
-      this.staging.buffer.readFloatBE(4+i*12+4),
-      this.staging.buffer.readUInt32BE(4+i*12+8)
-    ]
-    if (p[0] >= q[0][0] && p[0] <= q[0][1]
-    && p[1] >= q[1][0] && p[1] <= q[1][1]) {
-      results.push(p)
+  var B = self.branchFactor
+  self.ready(function () {
+    var results = []
+    for (var i = 0; i < self.staging.count; i++) {
+      var p = [
+        self.staging.buffer.readFloatBE(4+i*12+0),
+        self.staging.buffer.readFloatBE(4+i*12+4),
+        self.staging.buffer.readUInt32BE(4+i*12+8)
+      ]
+      if (p[0] >= q[0][0] && p[0] <= q[0][1]
+      && p[1] >= q[1][0] && p[1] <= q[1][1]) {
+        results.push(p)
+      }
     }
-  }
-  for (var i = -1; i < this.trees.length; i++) {
-    if (!this.bitfield[i]) continue
-    var t = this.trees[i]
-    var maxDepth = Math.ceil(Math.log(t.length/12+1)/Math.log(B))
-    var indexes = [0]
-    var depth = 0
-    var range = [[0,0]]
-    var qrange = [null]
-    for (var depth = 0; depth < maxDepth; depth++) {
-      if (indexes.length === 0) break
-      var axis = depth % 2
-      qrange[0] = q[axis]
-      var nextIndexes = []
-      for (var j = 0; j < indexes.length; j++) {
-        var ix = indexes[j]
-        range[0][0] = -Infinity
-        for (var k = 0; k < B-1; k++) {
-          var p = parse(t,(ix+k)*12)
-          if (!p) continue
-          if (p[0] >= q[0][0] && p[0] <= q[0][1]
-          && p[1] >= q[1][0] && p[1] <= q[1][1]) {
-            results.push(p)
+    for (var i = 0; i < self.trees.length; i++) {
+      if (!self.bitfield[i]) continue
+      var t = self.trees[i]
+      var maxDepth = Math.ceil(Math.log(t.length/12+1)/Math.log(B))
+      var indexes = [0]
+      var depth = 0
+      var range = [[0,0]]
+      var qrange = [null]
+      for (var depth = 0; depth < maxDepth; depth++) {
+        if (indexes.length === 0) break
+        var axis = depth % 2
+        qrange[0] = q[axis]
+        var nextIndexes = []
+        for (var j = 0; j < indexes.length; j++) {
+          var ix = indexes[j]
+          range[0][0] = -Infinity
+          for (var k = 0; k < B-1; k++) {
+            var p = parse(t,(ix+k)*12)
+            if (!p) continue
+            if (p[0] >= q[0][0] && p[0] <= q[0][1]
+            && p[1] >= q[1][0] && p[1] <= q[1][1]) {
+              results.push(p)
+            }
+            range[0][1] = p[axis]
+            if (overlapTest(range,qrange)) {
+              nextIndexes.push(calcIndex(B, ix, k))
+            }
+            range[0][0] = p[axis]
           }
-          range[0][1] = p[axis]
+          range[0][1] = +Infinity
           if (overlapTest(range,qrange)) {
             nextIndexes.push(calcIndex(B, ix, k))
           }
-          range[0][0] = p[axis]
         }
-        range[0][1] = +Infinity
-        if (overlapTest(range,qrange)) {
-          nextIndexes.push(calcIndex(B, ix, k))
-        }
+        indexes = nextIndexes
       }
-      indexes = nextIndexes
     }
-  }
-  cb(null, results)
+    cb(null, results)
+  })
 }
 
 function parse (buffer, offset) {
