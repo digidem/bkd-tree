@@ -26,6 +26,7 @@ KD.prototype._init = function () {
     r.read(0, self.N+4, function (err, buf) {
       if (!buf) buf = Buffer.alloc(4+self.N*12)
       self.staging = {
+        storage: r,
         count: buf.readUInt32BE(0),
         buffer: buf
       }
@@ -74,7 +75,8 @@ KD.prototype.batch = function (rows, cb) {
         return
       }
     }
-    cb()
+    self.staging.buffer.writeUInt32BE(self.staging.count, 0)
+    self.staging.storage.write(0, self.staging.buffer, cb)
   })
 }
 
