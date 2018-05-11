@@ -81,7 +81,8 @@ KD.prototype.batch = function (rows, cb) {
     self.staging.buffer.writeUInt32BE(self.staging.count, 0)
     var pending = 2
     self.staging.storage.write(0, self.staging.buffer, done)
-    var metaBuf = Buffer.from(JSON.stringify(self.meta))
+    var metaStr = JSON.stringify(self.meta)
+    var metaBuf = Buffer.from(metaStr + Array(1+1024-metaStr.length).join(' '))
     self.metaStorage.write(0, metaBuf, done)
     function done (err) {
       if (err) return cb(err)
@@ -103,12 +104,14 @@ KD.prototype._flush = function (cb) {
   var pending = 1
   for (var i = 0; self.meta.bitfield[i]; i++) {
     pending++
-    var t = self.trees[i]
     self.meta.bitfield[i] = false
-    t.storage.read(0, t.size*12, function (err, buf) {
-      if (!buf) buf = Buffer.alloc(t.size*12)
-      rows = rows.concat(unbuild(buf, { size: 12, parse: parse }))
-      if (--pending === 0) done()
+    self._getTree(i, function (err, t) {
+      if (err) return cb(err)
+      t.storage.read(0, t.size*12, function (err, buf) {
+        if (!buf) buf = Buffer.alloc(t.size*12)
+        rows = rows.concat(unbuild(buf, { size: 12, parse: parse }))
+        if (--pending === 0) done()
+      })
     })
   }
   if (--pending === 0) done()
@@ -177,7 +180,7 @@ KD.prototype._query = function (query, cb) {
       }
     }
     var pending = 1
-    for (var i = 0; i < self.trees.length; i++) (function (i) {
+    for (var i = 0; i < self.meta.bitfield.length; i++) (function (i) {
       if (!self.meta.bitfield[i]) return
       pending++
       self._getTree(i, function (err, t) {
