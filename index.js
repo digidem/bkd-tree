@@ -11,7 +11,6 @@ function KD (storage, opts) {
   self.storage = storage
   self.staging = null
   self.trees = []
-  self.bitfield = []
   self.branchFactor = opts.branchFactor || 4
   self.N = Math.pow(self.branchFactor,5)
   self.meta = null
@@ -39,7 +38,7 @@ KD.prototype._init = function () {
         try { self.meta = JSON.parse(buf) }
         catch (err) { self._error = err }
       } else {
-        self.meta = { bitfield: 0 }
+        self.meta = { bitfield: [], branchFactor: self.branchFactor }
       }
       if (--pending === 0) done()
     })
@@ -90,10 +89,10 @@ KD.prototype._flush = function (cb) {
     ])
   }
   var pending = 1
-  for (var i = 0; self.bitfield[i]; i++) {
+  for (var i = 0; self.meta.bitfield[i]; i++) {
     pending++
     var t = self.trees[i]
-    self.bitfield[i] = false
+    self.meta.bitfield[i] = false
     t.storage.read(0, t.size*12, function (err, buf) {
       if (!buf) buf = Buffer.alloc(t.size*12)
       rows = rows.concat(unbuild(buf, { size: 12, parse: parse }))
@@ -117,7 +116,7 @@ KD.prototype._flush = function (cb) {
     self._getTree(i, function (err, t) {
       if (err) return cb(err)
       t.storage.write(0, buffer, function (err) {
-        self.bitfield[i] = true
+        self.meta.bitfield[i] = true
         self.staging.count = 0
         cb()
       })
@@ -166,7 +165,7 @@ KD.prototype._query = function (query, cb) {
     }
     var pending = 1
     for (var i = 0; i < self.trees.length; i++) (function (i) {
-      if (!self.bitfield[i]) return
+      if (!self.meta.bitfield[i]) return
       pending++
       self._getTree(i, function (err, t) {
         t.storage.read(0, t.size*12, function (err, buf) {
