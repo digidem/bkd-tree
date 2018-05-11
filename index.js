@@ -13,7 +13,7 @@ function KD (storage, opts) {
   self.trees = []
   self.bitfield = []
   self.branchFactor = opts.branchFactor || 4
-  self.N = Math.pow(self.branchFactor,5)-1
+  self.N = Math.pow(self.branchFactor,5)
   self.meta = null
   self._error = null
   self._ready = []
@@ -116,7 +116,6 @@ KD.prototype._flush = function (cb) {
     })
     self._getTree(i, function (err, t) {
       if (err) return cb(err)
-      self.trees[i].size = buffer.length/12
       t.storage.write(0, buffer, function (err) {
         self.bitfield[i] = true
         self.staging.count = 0
@@ -128,8 +127,9 @@ KD.prototype._flush = function (cb) {
 
 KD.prototype._getTree = function (i, cb) {
   var self = this
-  var size = 0
-  for (var j = 0; j < i; j++) size += self.N * Math.pow(2,j)
+  var B = self.branchFactor
+  var x = self.N*Math.pow(2,i)
+  var size = Math.pow(B,Math.ceil(Math.log(x+1)/Math.log(B)))-1
   self.ready(function () {
     if (self.trees[i]) cb(null, self.trees[i])
     else self.storage('tree'+i, function (err, s) {
