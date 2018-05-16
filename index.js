@@ -1,6 +1,7 @@
 var build = require('./lib/build.js')
 var unbuild = require('./lib/unbuild.js')
 var calcIndex = require('./lib/calc-index.js')
+var writer = require('./lib/write.js')
 var overlapTest = require('bounding-box-overlap-test')
 var once = require('once')
 
@@ -13,6 +14,7 @@ function KD (storage, opts) {
   self.staging = null
   self.trees = []
   self.branchFactor = opts.branchFactor || 4
+  self._writer = writer(opts.type.point.concat(opts.type.value))
   self.N = Math.pow(self.branchFactor,5)
   self.meta = null
   self._error = null
@@ -66,10 +68,7 @@ KD.prototype.batch = function (rows, cb) {
   self.ready(function write () {
     for (; i < rows.length; i++) {
       var pt = rows[i]
-      var index = 4+(self.staging.count++)*12
-      self.staging.buffer.writeFloatBE(pt[0], index+0)
-      self.staging.buffer.writeFloatBE(pt[1], index+4)
-      self.staging.buffer.writeUInt32BE(pt[2], index+8)
+      self._writer(self.staging.buffer, 4, self.staging.count++, pt)
       if (self.staging.count === self.N) {
         self._flush(function () {
           i++

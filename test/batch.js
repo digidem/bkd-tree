@@ -7,7 +7,13 @@ function storage (name, cb) { cb(null, ram()) }
 
 test('batch', function (t) {
   var N = 5000
-  var bkd = umkd(storage, { branchFactor: 4 })
+  var bkd = umkd(storage, {
+    branchFactor: 4,
+    type: {
+      point: ['float32be','float32be'],
+      value: ['uint32be']
+    }
+  })
   var batch = []
   for (var i = 0; i < N; i++) {
     var x = Math.random()*2-1
