@@ -94,11 +94,8 @@ KD.prototype._flush = function (cb) {
   var self = this
   var rows = []
   for (var i = 0; i < self.staging.count; i++) {
-    rows.push([
-      self.staging.buffer.readFloatBE(4+i*12+0),
-      self.staging.buffer.readFloatBE(4+i*12+4),
-      self.staging.buffer.readUInt32BE(4+i*12+8)
-    ])
+    var pt = self._types.parse(self.staging.buffer, 4, i)
+    rows.push(pt.point.concat(pt.value))
   }
   var pending = 1
   for (var i = 0; self.meta.bitfield[i]; i++) {
@@ -108,7 +105,11 @@ KD.prototype._flush = function (cb) {
       if (err) return cb(err)
       t.storage.read(0, t.size*12, function (err, buf) {
         if (!buf) buf = Buffer.alloc(t.size*12)
-        rows = rows.concat(unbuild(buf, { size: 12, parse: parse }))
+        for (var j = 0; j < t.size; j++) {
+          var pt = self._types.parse(buf, 0, j)
+          if (pt.value[0] === 0) continue
+          rows.push(pt.point.concat(pt.value))
+        }
         if (--pending === 0) done()
       })
     })
@@ -121,10 +122,9 @@ KD.prototype._flush = function (cb) {
     var buffer = Buffer.alloc(n*12)
     build(rows, {
       branchFactor: B,
-      write: function (index, pt) {
-        buffer.writeFloatBE(pt[0], index*12+0)
-        buffer.writeFloatBE(pt[1], index*12+4)
-        buffer.writeUInt32BE(pt[2], index*12+8)
+      write: function (index, p) {
+        var pt = { point: [p[0],p[1]], value: p[2] }
+        self._types.write(buffer, 0, index, pt)
       }
     })
     self._getTree(i, function (err, t) {
@@ -195,17 +195,17 @@ KD.prototype._query = function (query, cb) {
               var ix = indexes[j]
               range[0][0] = -Infinity
               for (var k = 0; k < B-1; k++) {
-                var p = parse(buf,(ix+k)*12)
-                if (!p) continue
-                if (p[0] >= q[0][0] && p[0] <= q[0][1]
-                && p[1] >= q[1][0] && p[1] <= q[1][1]) {
-                  results.push(p)
+                var p = self._types.parse(buf, 0, ix+k)
+                if (p.value[0] === 0) continue
+                if (p.point[0] >= q[0][0] && p.point[0] <= q[0][1]
+                && p.point[1] >= q[1][0] && p.point[1] <= q[1][1]) {
+                  results.push(p.point.concat(p.value))
                 }
-                range[0][1] = p[axis]
+                range[0][1] = p.point[axis]
                 if (overlapTest(range,qrange)) {
                   nextIndexes.push(calcIndex(B, ix, k))
                 }
-                range[0][0] = p[axis]
+                range[0][0] = p.point[axis]
               }
               range[0][1] = +Infinity
               if (overlapTest(range,qrange)) {
@@ -220,16 +220,6 @@ KD.prototype._query = function (query, cb) {
     })(i)
     if (--pending === 0) cb(null, results)
   })
-}
-
-function parse (buffer, offset) {
-  var id = buffer.readUInt32BE(offset+8)
-  if (id === 0) return null
-  return [
-    buffer.readFloatBE(offset+0),
-    buffer.readFloatBE(offset+4),
-    id
-  ]
 }
 
 function noop () {}
