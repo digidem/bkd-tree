@@ -1,7 +1,7 @@
 var build = require('./lib/build.js')
 var unbuild = require('./lib/unbuild.js')
 var calcIndex = require('./lib/calc-index.js')
-var writer = require('./lib/write.js')
+var types = require('./lib/types.js')
 var overlapTest = require('bounding-box-overlap-test')
 var once = require('once')
 
@@ -14,7 +14,7 @@ function KD (storage, opts) {
   self.staging = null
   self.trees = []
   self.branchFactor = opts.branchFactor || 4
-  self._writer = writer(opts.type.point.concat(opts.type.value))
+  self._types = types(opts.type.point, opts.type.value)
   self.N = Math.pow(self.branchFactor,5)
   self.meta = null
   self._error = null
@@ -67,8 +67,8 @@ KD.prototype.batch = function (rows, cb) {
   var i = 0
   self.ready(function write () {
     for (; i < rows.length; i++) {
-      var pt = rows[i]
-      self._writer(self.staging.buffer, 4, self.staging.count++, pt)
+      var pt = { point: [rows[i][0],rows[i][1]], value: rows[i][2] }
+      self._types.write(self.staging.buffer, 4, self.staging.count++, pt)
       if (self.staging.count === self.N) {
         self._flush(function () {
           i++
@@ -168,14 +168,10 @@ KD.prototype._query = function (query, cb) {
   self.ready(function () {
     var results = []
     for (var i = 0; i < self.staging.count; i++) {
-      var p = [
-        self.staging.buffer.readFloatBE(4+i*12+0),
-        self.staging.buffer.readFloatBE(4+i*12+4),
-        self.staging.buffer.readUInt32BE(4+i*12+8)
-      ]
-      if (p[0] >= q[0][0] && p[0] <= q[0][1]
-      && p[1] >= q[1][0] && p[1] <= q[1][1]) {
-        results.push(p)
+      var p = self._types.parse(self.staging.buffer, 4, i)
+      if (p.point[0] >= q[0][0] && p.point[0] <= q[0][1]
+      && p.point[1] >= q[1][0] && p.point[1] <= q[1][1]) {
+        results.push(p.point.concat(p.value))
       }
     }
     var pending = 1
