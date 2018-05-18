@@ -166,16 +166,15 @@ KD.prototype.query = function (query, cb) {
 
 KD.prototype._query = function (query, cb) {
   var self = this
-  var q = [[query[0],query[2]],[query[1],query[3]]]
+  var dim = self._types.dim
+  var q = []
+  for (var i = 0; i < dim; i++) q.push([query[i],query[i+dim]])
   var B = self.branchFactor
   self.ready(function () {
     var results = []
     for (var i = 0; i < self.staging.count; i++) {
       var p = self._types.parse(self.staging.buffer, 4, i)
-      if (p.point[0] >= q[0][0] && p.point[0] <= q[0][1]
-      && p.point[1] >= q[1][0] && p.point[1] <= q[1][1]) {
-        results.push(p)
-      }
+      if (overlapPoint(p.point, query)) results.push(p)
     }
     var pending = 1
     for (var i = 0; i < self.meta.bitfield.length; i++) (function (i) {
@@ -202,10 +201,7 @@ KD.prototype._query = function (query, cb) {
                 var empty = !((buf[Math.floor((ix+k)/8)]>>((ix+k)%8))&1)
                 if (empty) continue
                 var p = self._types.parse(buf, presize, ix+k)
-                if (p.point[0] >= q[0][0] && p.point[0] <= q[0][1]
-                && p.point[1] >= q[1][0] && p.point[1] <= q[1][1]) {
-                  results.push(p)
-                }
+                if (overlapPoint(p.point, query)) results.push(p)
                 range[0][1] = p.point[axis]
                 if (overlapTest(range,qrange)) {
                   nextIndexes.push(calcIndex(B, ix, k))
@@ -228,3 +224,11 @@ KD.prototype._query = function (query, cb) {
 }
 
 function noop () {}
+
+function overlapPoint (p, q) {
+  var dim = p.length
+  for (var i = 0; i < dim; i++) {
+    if (p[i] < q[i] || p[i] > q[i+dim]) return false
+  }
+  return true
+}
