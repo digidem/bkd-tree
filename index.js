@@ -102,10 +102,11 @@ KD.prototype._flush = function (cb) {
     self.meta.bitfield[i] = false
     self._getTree(i, function (err, t) {
       if (err) return cb(err)
-      t.storage.read(0, t.size*self._types.size, function (err, buf) {
-        if (!buf) buf = Buffer.alloc(t.size*self._types.size)
+      var presize = Math.ceil(t.size/8)
+      t.storage.read(0, presize + t.size*self._types.size, function (err, buf) {
+        if (!buf) buf = Buffer.alloc(presize + t.size*self._types.size)
         for (var j = 0; j < t.size; j++) {
-          var pt = self._types.parse(buf, 0, j)
+          var pt = self._types.parse(buf, presize, j)
           if (pt.value[0] === 0) continue
           rows.push(pt.point.concat(pt.value))
         }
@@ -118,17 +119,18 @@ KD.prototype._flush = function (cb) {
   function done () {
     var B = self.branchFactor
     var n = Math.pow(B,Math.ceil(Math.log(rows.length+1)/Math.log(B)))-1
-    var buffer = Buffer.alloc(n*self._types.size)
-    build(rows, {
-      branchFactor: B,
-      dim: self._types.dim,
-      write: function (index, p) {
-        var pt = { point: [p[0],p[1]], value: p[2] }
-        self._types.write(buffer, 0, index, pt)
-      }
-    })
     self._getTree(i, function (err, t) {
       if (err) return cb(err)
+      var presize = Math.ceil(t.size/8)
+      var buffer = Buffer.alloc(presize + n*self._types.size)
+      build(rows, {
+        branchFactor: B,
+        dim: self._types.dim,
+        write: function (index, p) {
+          var pt = { point: [p[0],p[1]], value: p[2] }
+          self._types.write(buffer, presize, index, pt)
+        }
+      })
       t.storage.write(0, buffer, function (err) {
         self.meta.bitfield[i] = true
         self.staging.count = 0
@@ -179,8 +181,9 @@ KD.prototype._query = function (query, cb) {
       if (!self.meta.bitfield[i]) return
       pending++
       self._getTree(i, function (err, t) {
-        t.storage.read(0, t.size*self._types.size, function (err, buf) {
-          if (!buf) buf = Buffer.alloc(t.size*self._types.size)
+        var presize = Math.ceil(t.size/8)
+        t.storage.read(0, presize + t.size*self._types.size, function (err, buf) {
+          if (!buf) buf = Buffer.alloc(presize + t.size*self._types.size)
           var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
           var indexes = [0]
           var depth = 0
@@ -195,7 +198,7 @@ KD.prototype._query = function (query, cb) {
               var ix = indexes[j]
               range[0][0] = -Infinity
               for (var k = 0; k < B-1; k++) {
-                var p = self._types.parse(buf, 0, ix+k)
+                var p = self._types.parse(buf, presize, ix+k)
                 if (p.value[0] === 0) continue
                 if (p.point[0] >= q[0][0] && p.point[0] <= q[0][1]
                 && p.point[1] >= q[1][0] && p.point[1] <= q[1][1]) {
