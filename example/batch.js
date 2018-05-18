@@ -2,20 +2,25 @@ var ram = require('random-access-memory')
 function storage (name, cb) { cb(null,ram()) }
 
 var bkd = require('../')(storage, {
-  branchFactor: Number(process.argv[2])
+  branchFactor: 4,
+  type: {
+    point: [ 'float32be', 'float32be' ],
+    value: [ 'uint32be' ]
+  }
 })
 
-var N = Number(process.argv[3])
+var N = 5000
 var batch = []
 for (var i = 0; i < N; i++) {
   var x = Math.random()*2-1
   var y = Math.random()*2-1
-  batch.push([x,y,i+1]) // float32, float32, uint32
+  batch.push({ point: [x,y], value: [i+1] })
 }
+
+var bbox = [-0.5,-0.9,-0.4,-0.85]
 
 bkd.batch(batch, function (err) {
   if (err) console.error(err)
-  var bbox = process.argv.slice(4).map(Number)
   bkd.query(bbox, function (err, values) {
     if (err) console.error(err)
     else console.log(values)
