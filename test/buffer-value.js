@@ -2,23 +2,25 @@ var test = require('tape')
 var approxEq = require('approximately-equal')
 var umkd = require('../')
 var ram = require('random-access-memory')
+var randombytes = require('crypto').randomBytes
 
 function storage (name, cb) { cb(null, ram()) }
 
-test('batch', function (t) {
+test('buffer value', function (t) {
   var N = 5000
   var bkd = umkd(storage, {
     branchFactor: 4,
     type: {
       point: ['float32be','float32be'],
-      value: ['uint32be']
+      value: ['char[20]']
     }
   })
   var batch = []
   for (var i = 0; i < N; i++) {
     var x = Math.random()*2-1
     var y = Math.random()*2-1
-    batch.push({ point: [x,y], value: [i+1] })
+    var buf = randombytes(20)
+    batch.push({ point: [x,y], value: [buf] })
   }
   var searches = [
     [-0.9,-0.7,-0.8,-0.5],
@@ -39,8 +41,12 @@ test('batch', function (t) {
     searches.forEach(function (bbox,i) {
       bkd.query(bbox, function (err, values) {
         t.error(err)
-        var ids = values.map(function (p) { return p.value[0] }).sort()
-        var exids = expected[i].map(function (p) { return p.value[0] }).sort()
+        var ids = values.map(function (p) {
+          return p.value[0].toString('hex')
+        }).sort()
+        var exids = expected[i].map(function (p) {
+          return p.value[0].toString('hex')
+        }).sort()
         t.deepEqual(ids, exids, 'ids match')
         expected[i].sort(cmp)
         values.sort(cmp)
@@ -55,4 +61,6 @@ test('batch', function (t) {
   })
 })
 
-function cmp (a, b) { return a.value < b.value ? -1 : +1 }
+function cmp (a, b) {
+  return a.value[0].toString('hex') < b.value[0].toString('hex') ? -1 : +1
+}
