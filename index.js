@@ -1,5 +1,4 @@
 var build = require('./lib/build.js')
-var unbuild = require('./lib/unbuild.js')
 var calcIndex = require('./lib/calc-index.js')
 var types = require('./lib/types.js')
 var overlapTest = require('bounding-box-overlap-test')
@@ -26,8 +25,8 @@ KD.prototype._init = function () {
   var self = this
   var pending = 2
   self.storage('staging', function (err, r) {
-    r.read(0, 4+self.N*12, function (err, buf) {
-      if (!buf) buf = Buffer.alloc(4+self.N*12)
+    r.read(0, 4+self.N*self._types.size, function (err, buf) {
+      if (!buf) buf = Buffer.alloc(4+self.N*self._types.size)
       self.staging = {
         storage: r,
         count: buf.readUInt32BE(0),
@@ -103,8 +102,8 @@ KD.prototype._flush = function (cb) {
     self.meta.bitfield[i] = false
     self._getTree(i, function (err, t) {
       if (err) return cb(err)
-      t.storage.read(0, t.size*12, function (err, buf) {
-        if (!buf) buf = Buffer.alloc(t.size*12)
+      t.storage.read(0, t.size*self._types.size, function (err, buf) {
+        if (!buf) buf = Buffer.alloc(t.size*self._types.size)
         for (var j = 0; j < t.size; j++) {
           var pt = self._types.parse(buf, 0, j)
           if (pt.value[0] === 0) continue
@@ -119,9 +118,10 @@ KD.prototype._flush = function (cb) {
   function done () {
     var B = self.branchFactor
     var n = Math.pow(B,Math.ceil(Math.log(rows.length+1)/Math.log(B)))-1
-    var buffer = Buffer.alloc(n*12)
+    var buffer = Buffer.alloc(n*self._types.size)
     build(rows, {
       branchFactor: B,
+      dim: self._types.dim,
       write: function (index, p) {
         var pt = { point: [p[0],p[1]], value: p[2] }
         self._types.write(buffer, 0, index, pt)
@@ -179,8 +179,8 @@ KD.prototype._query = function (query, cb) {
       if (!self.meta.bitfield[i]) return
       pending++
       self._getTree(i, function (err, t) {
-        t.storage.read(0, t.size*12, function (err, buf) {
-          if (!buf) buf = Buffer.alloc(t.size*12)
+        t.storage.read(0, t.size*self._types.size, function (err, buf) {
+          if (!buf) buf = Buffer.alloc(t.size*self._types.size)
           var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
           var indexes = [0]
           var depth = 0
@@ -188,7 +188,7 @@ KD.prototype._query = function (query, cb) {
           var qrange = [null]
           for (var depth = 0; depth < maxDepth; depth++) {
             if (indexes.length === 0) break
-            var axis = depth % 2
+            var axis = depth % self._types.dim
             qrange[0] = q[axis]
             var nextIndexes = []
             for (var j = 0; j < indexes.length; j++) {
