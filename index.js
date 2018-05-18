@@ -106,8 +106,9 @@ KD.prototype._flush = function (cb) {
       t.storage.read(0, presize + t.size*self._types.size, function (err, buf) {
         if (!buf) buf = Buffer.alloc(presize + t.size*self._types.size)
         for (var j = 0; j < t.size; j++) {
+          var empty = !((buf[Math.floor(j/8)]>>(j%8))&1)
+          if (empty) continue
           var pt = self._types.parse(buf, presize, j)
-          if (pt.value[0] === 0) continue
           rows.push(pt.point.concat(pt.value))
         }
         if (--pending === 0) done()
@@ -127,6 +128,8 @@ KD.prototype._flush = function (cb) {
         branchFactor: B,
         dim: self._types.dim,
         write: function (index, p) {
+          var i = Math.floor(index/8)
+          buffer[i] = buffer[i] | (1 << (index % 8))
           var pt = { point: [p[0],p[1]], value: p[2] }
           self._types.write(buffer, presize, index, pt)
         }
@@ -198,8 +201,9 @@ KD.prototype._query = function (query, cb) {
               var ix = indexes[j]
               range[0][0] = -Infinity
               for (var k = 0; k < B-1; k++) {
+                var empty = !((buf[Math.floor((ix+k)/8)]>>((ix+k)%8))&1)
+                if (empty) continue
                 var p = self._types.parse(buf, presize, ix+k)
-                if (p.value[0] === 0) continue
                 if (p.point[0] >= q[0][0] && p.point[0] <= q[0][1]
                 && p.point[1] >= q[1][0] && p.point[1] <= q[1][1]) {
                   results.push(p.point.concat(p.value))
