@@ -42,7 +42,7 @@ test('deep', function (t) {
         t.deepEqual(ids, exids, 'ids match')
         expected[i].sort(cmp)
         values.sort(cmp)
-        for (var j = 0; j < Math.max(values.length,expected.length); j++) {
+        for (var j = 0; j < Math.max(values.length,expected[i].length); j++) {
           var v = values[j] || { point: [null,null] }
           var e = expected[i][j] || { point: [null,null] }
           t.ok(approxEq(v.point[0],e.point[0],0.0001),i+' x')
