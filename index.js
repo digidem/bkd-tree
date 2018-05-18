@@ -93,7 +93,7 @@ KD.prototype._flush = function (cb) {
   var rows = []
   for (var i = 0; i < self.staging.count; i++) {
     var pt = self._types.parse(self.staging.buffer, 4, i)
-    rows.push(pt.point.concat(pt.value))
+    rows.push(pt)
   }
   var pending = 1
   for (var i = 0; self.meta.bitfield[i]; i++) {
@@ -108,7 +108,7 @@ KD.prototype._flush = function (cb) {
           var empty = !((buf[Math.floor(j/8)]>>(j%8))&1)
           if (empty) continue
           var pt = self._types.parse(buf, presize, j)
-          rows.push(pt.point.concat(pt.value))
+          rows.push(pt)
         }
         if (--pending === 0) done()
       })
@@ -126,10 +126,9 @@ KD.prototype._flush = function (cb) {
       build(rows, {
         branchFactor: B,
         dim: self._types.dim,
-        write: function (index, p) {
+        write: function (index, pt) {
           var i = Math.floor(index/8)
           buffer[i] = buffer[i] | (1 << (index % 8))
-          var pt = { point: [p[0],p[1]], value: p[2] }
           self._types.write(buffer, presize, index, pt)
         }
       })
