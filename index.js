@@ -66,8 +66,7 @@ KD.prototype.batch = function (rows, cb) {
   var i = 0
   self.ready(function write () {
     for (; i < rows.length; i++) {
-      var pt = { point: [rows[i][0],rows[i][1]], value: rows[i][2] }
-      self._types.write(self.staging.buffer, 4, self.staging.count++, pt)
+      self._types.write(self.staging.buffer, 4, self.staging.count++, rows[i])
       if (self.staging.count === self.N) {
         self._flush(function () {
           i++
@@ -176,7 +175,7 @@ KD.prototype._query = function (query, cb) {
       var p = self._types.parse(self.staging.buffer, 4, i)
       if (p.point[0] >= q[0][0] && p.point[0] <= q[0][1]
       && p.point[1] >= q[1][0] && p.point[1] <= q[1][1]) {
-        results.push(p.point.concat(p.value))
+        results.push(p)
       }
     }
     var pending = 1
@@ -206,7 +205,7 @@ KD.prototype._query = function (query, cb) {
                 var p = self._types.parse(buf, presize, ix+k)
                 if (p.point[0] >= q[0][0] && p.point[0] <= q[0][1]
                 && p.point[1] >= q[1][0] && p.point[1] <= q[1][1]) {
-                  results.push(p.point.concat(p.value))
+                  results.push(p)
                 }
                 range[0][1] = p.point[axis]
                 if (overlapTest(range,qrange)) {
