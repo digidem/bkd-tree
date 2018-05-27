@@ -24,9 +24,10 @@ function KD (storage, opts) {
 KD.prototype._init = function () {
   var self = this
   var pending = 2
+  var presize = Math.ceil(self.N/8)
   self.storage('staging', function (err, r) {
-    r.read(0, 4+self.N*self._types.size, function (err, buf) {
-      if (!buf) buf = Buffer.alloc(4+self.N*self._types.size)
+    r.read(0, 4+presize+self.N*self._types.size, function (err, buf) {
+      if (!buf) buf = Buffer.alloc(4+presize+self.N*self._types.size)
       self.staging = {
         storage: r,
         count: buf.readUInt32BE(0),
@@ -64,9 +65,13 @@ KD.prototype.batch = function (rows, cb) {
   cb = once(cb || noop)
   var self = this
   var i = 0
+  var presize = Math.ceil(self.N/8)
   self.ready(function write () {
     for (; i < rows.length; i++) {
-      self._types.write(self.staging.buffer, 4, self.staging.count++, rows[i])
+      self._types.write(
+        self.staging.buffer, 4+presize,
+        self.staging.count++, rows[i]
+      )
       if (self.staging.count === self.N) {
         self._flush(function () {
           i++
@@ -90,10 +95,11 @@ KD.prototype.batch = function (rows, cb) {
 
 KD.prototype._flush = function (cb) {
   var self = this
-  var rows = []
+  var inserts = [], deletes = []
+  var presize = Math.ceil(self.N/8)
   for (var i = 0; i < self.staging.count; i++) {
-    var pt = self._types.parse(self.staging.buffer, 4, i)
-    rows.push(pt)
+    var pt = self._types.parse(self.staging.buffer, 4+presize, i)
+    inserts.push(pt)
   }
   var pending = 1
   for (var i = 0; self.meta.bitfield[i]; i++) {
@@ -101,14 +107,16 @@ KD.prototype._flush = function (cb) {
     self.meta.bitfield[i] = false
     self._getTree(i, function (err, t) {
       if (err) return cb(err)
-      var presize = Math.ceil(t.size/8)
+      var presize = Math.ceil(t.size/8)*2
       t.storage.read(0, presize + t.size*self._types.size, function (err, buf) {
         if (!buf) buf = Buffer.alloc(presize + t.size*self._types.size)
         for (var j = 0; j < t.size; j++) {
           var empty = !((buf[Math.floor(j/8)]>>(j%8))&1)
           if (empty) continue
+          var deleted = ((buf[Math.floor(j/8)+presize/2]>>(j%8))&1)
+          if (deleted) continue
           var pt = self._types.parse(buf, presize, j)
-          rows.push(pt)
+          inserts.push(pt)
         }
         if (--pending === 0) done()
       })
@@ -118,12 +126,12 @@ KD.prototype._flush = function (cb) {
 
   function done () {
     var B = self.branchFactor
-    var n = Math.pow(B,Math.ceil(Math.log(rows.length+1)/Math.log(B)))-1
+    var n = Math.pow(B,Math.ceil(Math.log(inserts.length+1)/Math.log(B)))-1
     self._getTree(i, function (err, t) {
       if (err) return cb(err)
-      var presize = Math.ceil(t.size/8)
+      var presize = Math.ceil(t.size/8)*2
       var buffer = Buffer.alloc(presize + n*self._types.size)
-      build(rows, {
+      build(inserts, {
         branchFactor: B,
         dim: self._types.dim,
         write: function (index, pt) {
@@ -170,10 +178,11 @@ KD.prototype._query = function (query, cb) {
   var q = []
   for (var i = 0; i < dim; i++) q.push([query[i],query[i+dim]])
   var B = self.branchFactor
+  var presize = Math.ceil(self.N/8)
   self.ready(function () {
     var results = []
     for (var i = 0; i < self.staging.count; i++) {
-      var p = self._types.parse(self.staging.buffer, 4, i)
+      var p = self._types.parse(self.staging.buffer, 4+presize, i)
       if (overlapPoint(p.point, query)) results.push(p)
     }
     var pending = 1
@@ -181,7 +190,7 @@ KD.prototype._query = function (query, cb) {
       if (!self.meta.bitfield[i]) return
       pending++
       self._getTree(i, function (err, t) {
-        var presize = Math.ceil(t.size/8)
+        var presize = Math.ceil(t.size/8)*2
         t.storage.read(0, presize + t.size*self._types.size, function (err, buf) {
           if (!buf) buf = Buffer.alloc(presize + t.size*self._types.size)
           var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
