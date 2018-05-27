@@ -19,6 +19,7 @@ function KD (storage, opts) {
   self._error = null
   self._ready = []
   self._init()
+  self._compare = opts.compare
 }
 
 KD.prototype._init = function () {
@@ -68,9 +69,16 @@ KD.prototype.batch = function (rows, cb) {
   var presize = Math.ceil(self.N/8)
   self.ready(function write () {
     for (; i < rows.length; i++) {
+      var row = rows[i]
+      var j = Math.floor(4+self.staging.count/8)
+      if (row.type === 'delete') {
+        self.staging.buffer[j] = self.staging.buffer[j] & (0xff-(1<<(i%8)))
+      } else if (row.type === 'insert' || row.type === undefined) {
+        self.staging.buffer[j] = self.staging.buffer[j] | (1<<(i%8))
+      }
       self._types.write(
         self.staging.buffer, 4+presize,
-        self.staging.count++, rows[i]
+        self.staging.count++, row
       )
       if (self.staging.count === self.N) {
         self._flush(function () {
@@ -95,11 +103,15 @@ KD.prototype.batch = function (rows, cb) {
 
 KD.prototype._flush = function (cb) {
   var self = this
+  var B = self.branchFactor
   var inserts = [], deletes = []
-  var presize = Math.ceil(self.N/8)
+  var stagingPresize = Math.ceil(self.N/8)
   for (var i = 0; i < self.staging.count; i++) {
-    var pt = self._types.parse(self.staging.buffer, 4+presize, i)
-    inserts.push(pt)
+    var j = Math.floor(4+i/8)
+    var deleted = ((self.staging.buffer[j]>>(i%8))&1) === 0
+    var pt = self._types.parse(self.staging.buffer, 4+stagingPresize, i)
+    if (deleted) deletes.push(pt)
+    else inserts.push(pt)
   }
   var pending = 1
   for (var i = 0; self.meta.bitfield[i]; i++) {
@@ -113,7 +125,7 @@ KD.prototype._flush = function (cb) {
         for (var j = 0; j < t.size; j++) {
           var empty = !((buf[Math.floor(j/8)]>>(j%8))&1)
           if (empty) continue
-          var deleted = ((buf[Math.floor(j/8)+presize/2]>>(j%8))&1)
+          var deleted = !!((buf[Math.floor(j/8)+presize/2]>>(j%8))&1)
           if (deleted) continue
           var pt = self._types.parse(buf, presize, j)
           inserts.push(pt)
@@ -141,11 +153,72 @@ KD.prototype._flush = function (cb) {
         }
       })
       t.storage.write(0, buffer, function (err) {
-        self.meta.bitfield[i] = true
-        self.staging.count = 0
-        cb()
+        walkTreesForDeletes(i, deletes, finish)
       })
     })
+  }
+  function walkTreesForDeletes (skip, deletes, cb) {
+    if (deletes.length === 0) return cb()
+    var pending = 1
+    for (var j = 0; j < self.trees.length; j++) {
+      if (!self.meta.bitfield[j]) continue
+      if (j === skip) continue
+      pending++
+      self._getTree(j, function (err, t) {
+        if (err) return cb(err)
+        var presize = Math.ceil(t.size/8)*2
+        t.storage.read(0, presize + t.size*self._types.size, function (err, buf) {
+          if (err) return cb(err)
+          if (setDeletes(buf, t, deletes) > 0) {
+            t.storage.write(0, buf, function (err) {
+              if (err) cb(err)
+              else if (--pending === 0) cb()
+            })
+          } else if (--pending === 0) cb()
+        })
+      })
+    }
+    if (--pending === 0) cb()
+  }
+  function setDeletes (buf, t, deletes) {
+    if (deletes.length === 0) return 0
+    var presize = Math.ceil(t.size/8)*2
+    var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
+    var removed = 0
+    for (var i = 0; i < deletes.length; i++) {
+      var d = deletes[i]
+      var found = false
+      var ix = 0
+      for (var depth = 0; depth < maxDepth; depth++) {
+        var axis = depth % self._types.dim
+        for (var k = 0; k < B-1; k++) {
+          var empty = !((buf[Math.floor((ix+k)/8)]>>((ix+k)%8))&1)
+          if (empty) continue
+          var delIndex = Math.floor((ix+k)/8)+presize/2
+          var deleted = !!((buf[delIndex]>>((ix+k)%8))&1)
+          if (deleted) continue
+          var p = self._types.parse(buf, presize, ix+k)
+          if (self._compare(d,p)) {
+            buf[delIndex] = buf[delIndex] | (1<<((ix+k)%8))
+            removed++
+            found = true
+            break
+          }
+          if (d.point[axis] < p.point[axis]) {
+            ix = calcIndex(B, ix, k)
+            break
+          }
+        }
+        if (found) break
+        if (k === B-1) ix = calcIndex(B, ix, k)
+      }
+    }
+    return removed
+  }
+  function finish () {
+    self.meta.bitfield[i] = true
+    self.staging.count = 0
+    cb()
   }
 }
 
@@ -178,12 +251,17 @@ KD.prototype._query = function (query, cb) {
   var q = []
   for (var i = 0; i < dim; i++) q.push([query[i],query[i+dim]])
   var B = self.branchFactor
-  var presize = Math.ceil(self.N/8)
+  var stagingPresize = Math.ceil(self.N/8)
   self.ready(function () {
-    var results = []
+    var results = [], deletes = []
     for (var i = 0; i < self.staging.count; i++) {
-      var p = self._types.parse(self.staging.buffer, 4+presize, i)
-      if (overlapPoint(p.point, query)) results.push(p)
+      var j = Math.floor(4+i/8)
+      var deleted = !((self.staging.buffer[j]>>(i%8))&1)
+      var p = self._types.parse(self.staging.buffer, 4+stagingPresize, i)
+      if (overlapPoint(p.point, query)) {
+        if (deleted) deletes.push(p)
+        else results.push(p)
+      }
     }
     var pending = 1
     for (var i = 0; i < self.meta.bitfield.length; i++) (function (i) {
@@ -209,8 +287,15 @@ KD.prototype._query = function (query, cb) {
               for (var k = 0; k < B-1; k++) {
                 var empty = !((buf[Math.floor((ix+k)/8)]>>((ix+k)%8))&1)
                 if (empty) continue
+                var deleted = !!((buf[Math.floor((ix+k)/8)+presize/2]>>((ix+k)%8))&1)
+                if (deleted) continue
                 var p = self._types.parse(buf, presize, ix+k)
-                if (overlapPoint(p.point, query)) results.push(p)
+                if (overlapPoint(p.point, query)) {
+                  for (var n = 0; n < deletes.length; n++) {
+                    if (self._compare(p, deletes[n])) break
+                  }
+                  if (n === deletes.length) results.push(p)
+                }
                 range[0][1] = p.point[axis]
                 if (overlapTest(range,qrange)) {
                   nextIndexes.push(calcIndex(B, ix, k))

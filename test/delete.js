@@ -14,8 +14,7 @@ test('delete', function (t) {
       value: ['uint32be']
     },
     compare: function (a, b) {
-      return approxEq(a.point, b.point, 0.0001)
-        && a.value[0] === b.value[1]
+      return a.value[0] === b.value[0]
     }
   })
   var inserts = []
