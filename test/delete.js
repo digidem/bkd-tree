@@ -29,7 +29,7 @@ test('delete', function (t) {
   var deleted = {}
   for (var i = 0; i < N; i+=4) {
     deleted[i] = true
-    deletes.push({ type: 'delete', point: inserted[i], value: [i] })
+    deletes.push({ type: 'delete', point: inserted[i].slice(), value: [i] })
   }
 
   var searches = [

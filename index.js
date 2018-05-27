@@ -108,10 +108,19 @@ KD.prototype._flush = function (cb) {
   var stagingPresize = Math.ceil(self.N/8)
   for (var i = 0; i < self.staging.count; i++) {
     var j = Math.floor(4+i/8)
-    var deleted = ((self.staging.buffer[j]>>(i%8))&1) === 0
+    var deleted = !((self.staging.buffer[j]>>(i%8))&1)
     var pt = self._types.parse(self.staging.buffer, 4+stagingPresize, i)
     if (deleted) deletes.push(pt)
     else inserts.push(pt)
+  }
+  for (var i = 0; i < deletes.length; i++) {
+    for (var j = 0; j < inserts.length; j++) {
+      if (self._compare(deletes[i], inserts[j])) {
+        //deletes.splice(i,1)
+        //inserts.splice(j,1)
+        console.log('STAGED!',i,j)
+      }
+    }
   }
   var pending = 1
   for (var i = 0; self.meta.bitfield[i]; i++) {
@@ -196,9 +205,8 @@ KD.prototype._flush = function (cb) {
           if (empty) continue
           var delIndex = Math.floor((ix+k)/8)+presize/2
           var deleted = !!((buf[delIndex]>>((ix+k)%8))&1)
-          if (deleted) continue
           var p = self._types.parse(buf, presize, ix+k)
-          if (self._compare(d,p)) {
+          if (!deleted && self._compare(d,p)) {
             buf[delIndex] = buf[delIndex] | (1<<((ix+k)%8))
             removed++
             found = true
@@ -288,9 +296,8 @@ KD.prototype._query = function (query, cb) {
                 var empty = !((buf[Math.floor((ix+k)/8)]>>((ix+k)%8))&1)
                 if (empty) continue
                 var deleted = !!((buf[Math.floor((ix+k)/8)+presize/2]>>((ix+k)%8))&1)
-                if (deleted) continue
                 var p = self._types.parse(buf, presize, ix+k)
-                if (overlapPoint(p.point, query)) {
+                if (!deleted && overlapPoint(p.point, query)) {
                   for (var n = 0; n < deletes.length; n++) {
                     if (self._compare(p, deletes[n])) break
                   }
