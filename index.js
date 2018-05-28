@@ -113,14 +113,13 @@ KD.prototype._flush = function (cb) {
     if (deleted) deletes.push(pt)
     else inserts.push(pt)
   }
-  for (var i = 0; i < deletes.length; i++) {
-    for (var j = 0; j < inserts.length; j++) {
-      if (self._compare(deletes[i], inserts[j])) {
-        //deletes.splice(i,1)
-        //inserts.splice(j,1)
-        console.log('STAGED!',i,j)
+  if (deletes.length > 0) {
+    inserts = inserts.filter(function (r) {
+      for (var i = 0; i < deletes.length; i++) {
+        if (self._compare(r,deletes[i])) return false
       }
-    }
+      return true
+    })
   }
   var pending = 1
   for (var i = 0; self.meta.bitfield[i]; i++) {
@@ -226,6 +225,9 @@ KD.prototype._flush = function (cb) {
   function finish () {
     self.meta.bitfield[finalTree] = true
     self.staging.count = 0
+    for (var i = 0; i < stagingPresize; i++) {
+      self.staging.buffer[4+i] = 0
+    }
     cb()
   }
 }
