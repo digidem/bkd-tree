@@ -72,7 +72,7 @@ KD.prototype.batch = function (rows, cb) {
       var row = rows[i]
       var j = Math.floor(4+self.staging.count/8)
       if (row.type === 'delete') {
-        self.staging.buffer[j] = self.staging.buffer[j] & (0xff-(1<<(i%8)))
+        // already zero
       } else if (row.type === 'insert' || row.type === undefined) {
         self.staging.buffer[j] = self.staging.buffer[j] | (1<<(i%8))
       }
@@ -270,6 +270,14 @@ KD.prototype._query = function (query, cb) {
         if (deleted) deletes.push(p)
         else results.push(p)
       }
+    }
+    if (deletes.length > 0) {
+      results = results.filter(function (r) {
+        for (var i = 0; i < deletes.length; i++) {
+          if (self._compare(r,deletes[i])) return false
+        }
+        return true
+      })
     }
     var pending = 1
     for (var i = 0; i < self.meta.bitfield.length; i++) (function (i) {
