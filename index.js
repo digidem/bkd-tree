@@ -143,15 +143,15 @@ KD.prototype._flush = function (cb) {
       })
     })
   }
+  var finalTree = i
   if (--pending === 0) done()
 
   function done () {
     var B = self.branchFactor
-    var n = Math.pow(B,Math.ceil(Math.log(inserts.length+1)/Math.log(B)))-1
-    self._getTree(i, function (err, t) {
+    self._getTree(finalTree, function (err, t) {
       if (err) return cb(err)
       var presize = Math.ceil(t.size/8)*2
-      var buffer = Buffer.alloc(presize + n*self._types.size)
+      var buffer = Buffer.alloc(presize+t.size*self._types.size)
       build(inserts, {
         branchFactor: B,
         dim: self._types.dim,
@@ -162,7 +162,7 @@ KD.prototype._flush = function (cb) {
         }
       })
       t.storage.write(0, buffer, function (err) {
-        walkTreesForDeletes(i, deletes, finish)
+        walkTreesForDeletes(finalTree, deletes, finish)
       })
     })
   }
@@ -224,7 +224,7 @@ KD.prototype._flush = function (cb) {
     return removed
   }
   function finish () {
-    self.meta.bitfield[i] = true
+    self.meta.bitfield[finalTree] = true
     self.staging.count = 0
     cb()
   }
@@ -277,7 +277,8 @@ KD.prototype._query = function (query, cb) {
       pending++
       self._getTree(i, function (err, t) {
         var presize = Math.ceil(t.size/8)*2
-        t.storage.read(0, presize + t.size*self._types.size, function (err, buf) {
+        var len = presize + t.size*self._types.size
+        t.storage.read(0, len, function (err, buf) {
           if (!buf) buf = Buffer.alloc(presize + t.size*self._types.size)
           var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
           var indexes = [0]

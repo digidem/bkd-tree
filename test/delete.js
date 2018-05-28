@@ -58,8 +58,8 @@ test('delete', function (t) {
     searches.forEach(function (bbox,i) {
       bkd.query(bbox, function (err, values) {
         t.error(err)
-        var ids = values.map(function (p) { return p.value[0] }).sort()
-        var exids = expected[i].map(function (p) { return p.value[0] }).sort()
+        var ids = values.map(function (p) { return p.value[0] }).sort(cmpNum)
+        var exids = expected[i].map(function (p) { return p.value[0] }).sort(cmpNum)
         t.deepEqual(ids, exids, 'ids match')
         expected[i].sort(cmp)
         values.sort(cmp)
@@ -75,3 +75,4 @@ test('delete', function (t) {
 })
 
 function cmp (a, b) { return a.value < b.value ? -1 : +1 }
+function cmpNum (a, b) { return a < b ? -1 : +1 }
