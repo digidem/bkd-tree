@@ -14,7 +14,7 @@ var batch = []
 for (var i = 0; i < N; i++) {
   var x = Math.random()*2-1
   var y = Math.random()*2-1
-  batch.push({ point: [x,y], value: [i+1] })
+  batch.push({ type: 'insert', point: [x,y], value: [i+1] })
 }
 
 var bbox = [-0.5,-0.9,-0.4,-0.85]

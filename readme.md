@@ -1,6 +1,16 @@
-# unordered-materialized-bkd
+# bkd-tree
 
-work in progress
+[bkd tree][bkd] implementation using [random-access][] storage
+
+[bkd]: https://users.cs.duke.edu/~pankaj/publications/papers/bkd-sstd.pdf
+[random-access]: https://www.npmjs.com/package/abstract-random-access
+
+This module implements some of the bkd tree paper and is very fast. However, the
+memory usage can be high at times and some features of the paper, such as the
+grid bulk load algorithm, are not yet implemented.
+
+The robustness and atomicity of these data structures has not yet been
+thoroughly tested.
 
 # example
 
@@ -11,7 +21,7 @@ insert 5000 points to in-memory storage then search those points for
 var ram = require('random-access-memory')
 function storage (name, cb) { cb(null,ram()) }
 
-var bkd = require('unordered-materialized-bkd')(storage, {
+var bkd = require('bkd-tree')(storage, {
   branchFactor: 4,
   type: {
     point: [ 'float32be', 'float32be' ],
@@ -24,7 +34,7 @@ var batch = []
 for (var i = 0; i < N; i++) {
   var x = Math.random()*2-1
   var y = Math.random()*2-1
-  batch.push({ point: [x,y], value: [i+1] })
+  batch.push({ type: 'insert', point: [x,y], value: [i+1] })
 }
 
 var bbox = [-0.5,-0.9,-0.4,-0.85]
@@ -51,3 +61,46 @@ output:
     value: [ 3807 ] } ]
 ```
 
+# api
+
+``` js
+var BKD = require('bkd-tree')
+```
+
+## var bkd = BKD(storage, opts)
+
+Create a new `bkd` instance from a [random-access][] `storage` instance and:
+
+* `opts.type.point` - array of types for the coordinates
+* `opts.type.value` - array of types for the data payload
+* `opts.branchFactor` - branch factor. default: 4
+
+The dimensionality of the coordinate space should match the length of the
+`opts.type.value` length.
+
+## bkd.batch(rows, cb)
+
+Write or remove documents from an array of `rows`. Each `row` in the `rows`
+array should have:
+
+* `row.type` - `'delete'` or `'insert'`
+* `row.point` - coordinate array
+* `row.value` - array of value types
+
+## bkd.query(bbox, cb)
+
+Search for records as `cb(err, results)` in a bounding box `bbox`.
+
+The `bbox` should contain all the minimum values for each dimension followed by
+all the maximum values for each dimension. In 2d, the bbox is
+`[minX,minY,maxX,maxY]`, or the more familiar `[west,south,east,north]`.
+
+# install
+
+```
+npm install bkd-tree
+```
+
+# license
+
+BSD
