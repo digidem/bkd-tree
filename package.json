@@ -8,5 +8,8 @@
   "dependencies": {
     "bounding-box-overlap-test": "^1.0.0",
     "once": "^1.4.0"
+  },
+  "scripts": {
+    "test": "tape test/*.js"
   }
 }

@@ -35,7 +35,8 @@ test('delete', function (t) {
   var searches = [
     [-0.9,-0.7,-0.8,-0.5],
     [+0.5,+0.6,+0.6,+0.7],
-    [+0.1,+0.1,+0.2,+0.2]
+    [+0.1,+0.1,+0.2,+0.2],
+    [-1,-1,+1,+1]
   ]
   var expected = searches.map(function (q) {
     return inserts.filter(function (b) {
@@ -60,6 +61,7 @@ test('delete', function (t) {
         t.error(err)
         var ids = values.map(function (p) { return p.value[0] }).sort(cmpNum)
         var exids = expected[i].map(function (p) { return p.value[0] }).sort(cmpNum)
+
         t.deepEqual(ids, exids, 'ids match')
         expected[i].sort(cmp)
         values.sort(cmp)

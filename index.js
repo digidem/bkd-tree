@@ -136,7 +136,10 @@ KD.prototype._flush = function (cb) {
           var deleted = !!((buf[Math.floor(j/8)+presize/2]>>(j%8))&1)
           if (deleted) continue
           var pt = self._types.parse(buf, presize, j)
-          inserts.push(pt)
+          for (var k = 0; k < deletes.length; k++) {
+            if (self._compare(pt, deletes[k])) break
+          }
+          if (k === deletes.length) inserts.push(pt)
         }
         if (--pending === 0) done()
       })
