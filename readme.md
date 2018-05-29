@@ -74,8 +74,9 @@ Create a new `bkd` instance from a [random-access][] `storage` instance and:
 * `opts.type.point` - array of types for the coordinates
 * `opts.type.value` - array of types for the data payload
 * `opts.branchFactor` - branch factor. default: 4
+* `opts.levels` - number of levels in the smallest tree. default: 5
 
-The dimensionality of the coordinate space should match the length of the
+The dimensionality of the coordinates should match the length of the
 `opts.type.value` length.
 
 ## bkd.batch(rows, cb)

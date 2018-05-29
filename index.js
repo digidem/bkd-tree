@@ -9,12 +9,17 @@ module.exports = KD
 function KD (storage, opts) {
   var self = this
   if (!(self instanceof KD)) return new KD(storage, opts)
+  if (!opts) opts = {}
   self.storage = storage
   self.staging = null
   self.trees = []
   self.branchFactor = opts.branchFactor || 4
+  if (!opts.type || !Array.isArray(opts.type.point)
+  || !Array.isArray(opts.type.value)) {
+    throw new Error('must supply opts.type.point and opts.type.value arrays')
+  }
   self._types = types(opts.type.point, opts.type.value)
-  self.N = Math.pow(self.branchFactor,5)
+  self.N = Math.pow(self.branchFactor,opts.levels || 5)
   self.meta = null
   self._error = null
   self._ready = []
