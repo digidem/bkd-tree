@@ -6,7 +6,8 @@ var bkd = require('../')(storage, {
   type: {
     point: [ 'float32be', 'float32be' ],
     value: [ 'uint32be' ]
-  }
+  },
+  compare: function (a, b) { return a.value[0] === b.value[0] }
 })
 
 var N = 5000

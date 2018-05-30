@@ -26,7 +26,8 @@ var bkd = require('bkd-tree')(storage, {
   type: {
     point: [ 'float32be', 'float32be' ],
     value: [ 'uint32be' ]
-  }
+  },
+  compare: function (a, b) { return a.value[0] === b.value[0] }
 })
 
 var N = 5000
@@ -75,6 +76,7 @@ Create a new `bkd` instance from a [random-access][] `storage` instance and:
 * `opts.type.value` - array of types for the data payload
 * `opts.branchFactor` - branch factor. default: 4
 * `opts.levels` - number of levels in the smallest tree. default: 5
+* `opts.compare(a,b)` - boolean comparison function required for deletes
 
 The dimensionality of the coordinates should match the length of the
 `opts.type.value` length.
