@@ -38,7 +38,7 @@ test('multibatch', function (t) {
     bkd.query([0,0,9,9], function (err, values) {
       t.error(err)
       t.deepEqual(values, [
-        { point: [3,4], value: [0] },
+        { point: [3,4], value: [1] },
         { point: [5,6], value: [2] }
       ])
     })

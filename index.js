@@ -76,10 +76,11 @@ KD.prototype.batch = function (rows, cb) {
     for (; i < rows.length; i++) {
       var row = rows[i]
       var j = Math.floor(4+self.staging.count/8)
+      var bit = 1 << (self.staging.count % 8)
       if (row.type === 'delete') {
         // already zero
       } else if (row.type === 'insert' || row.type === undefined) {
-        self.staging.buffer[j] = self.staging.buffer[j] | (1<<(i%8))
+        self.staging.buffer[j] = self.staging.buffer[j] | bit
       }
       self._types.write(
         self.staging.buffer, 4+presize,
