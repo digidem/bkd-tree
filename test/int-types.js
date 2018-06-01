@@ -16,8 +16,8 @@ test('int types', function (t) {
   })
   var batch = []
   for (var i = 0; i < N; i++) {
-    var x = Math.floor((Math.random()*2-1)*1000)
-    var y = Math.floor(Math.random()*10000)
+    var x = Math.floor((Math.random()*2-1)*100)
+    var y = Math.floor(Math.random()*100)
     var value = [
       Math.floor((Math.random()*2-1)*128),
       Math.floor((Math.random()*2-1)*32768),
@@ -28,25 +28,37 @@ test('int types', function (t) {
     batch.push({ point: [x,y], value: value })
   }
   var searches = [
-    [-20,-10,-10,-5]
+    [-20,-10,-10,+5]
   ]
   var expected = searches.map(function (q) {
     return batch.filter(function (b) {
-      return b.point[0] > q[0] && b.point[0] < q[2]
-        && b.point[1] > q[1] && b.point[1] < q[3]
+      return b.point[0] >= q[0] && b.point[0] <= q[2]
+        && b.point[1] >= q[1] && b.point[1] <= q[3]
     })
   })
-  t.plan(1 + searches.length*2)
+  t.plan(1 + searches.length*3)
 
   bkd.batch(batch, function (err) {
     t.error(err)
     searches.forEach(function (bbox,i) {
       bkd.query(bbox, function (err, values) {
+        console.log(values.length)
         t.error(err)
-        t.deepEqual(values.sort(cmp), expected[i].sort(cmp))
+        t.deepEqual(
+          values.sort(cmp).map(getPoint),
+          expected[i].sort(cmp).map(getPoint),
+          'compare points'
+        )
+        t.deepEqual(
+          values.sort(cmp).map(getValue),
+          expected[i].sort(cmp).map(getValue),
+          'compare values'
+        )
       })
     })
   })
 })
 
 function cmp (a, b) { return a.value[4] < b.value[4] ? -1 : +1 }
+function getPoint (x) { return x.point }
+function getValue (x) { return x.value }
