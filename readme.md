@@ -88,8 +88,8 @@ The type strings listed in `opts.type.point` and `opts.type.value` can be:
 * int8, int16be, int16le, int32be, int32le
 
 Any of these types can have a `[n]` quantity at the end. When `n > 1`, the
-corresponding value for the type will be an array except for uint8 which is a
-`Buffer`.
+corresponding value for the type will be a typed array except for uint8 which is
+a `Buffer` (which is also a Uint8Array).
 
 ## bkd.batch(rows, cb)
 
