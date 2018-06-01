@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "approximately-equal": "^0.1.8",
+    "minimist": "^1.2.0",
     "random-access-file": "^2.0.1",
     "random-access-memory": "^2.4.0",
     "tape": "^4.9.0"

@@ -2,6 +2,7 @@ var raf = require('random-access-file')
 var randombytes = require('crypto').randomBytes
 var tmpdir = require('os').tmpdir()
 var path = require('path')
+var argv = require('minimist')(process.argv)
 
 var dir = path.join(tmpdir,'umbkd-'+randombytes(4).toString('hex'))
 require('mkdirp').sync(dir)
@@ -10,15 +11,16 @@ console.log(dir)
 function storage (name, cb) { cb(null,raf(path.join(dir,name))) }
 
 var bkd = require('../')(storage, {
-  branchFactor: Number(process.argv[2]),
+  branchFactor: argv.branchFactor,
+  levels: argv.levels,
   type: {
     point: [ 'float32be', 'float32be' ],
     value: [ 'uint32be' ]
   }
 })
 
-var N = Number(process.argv[3])
-var M = Number(process.argv[4])
+var N = argv.n
+var M = argv.batchSize
 
 var batches = []
 for (var i = 0; i < N; i++) {
