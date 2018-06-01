@@ -72,14 +72,24 @@ var BKD = require('bkd-tree')
 
 Create a new `bkd` instance from a [random-access][] `storage` instance and:
 
-* `opts.type.point` - array of types for the coordinates
-* `opts.type.value` - array of types for the data payload
+* `opts.type.point` - array of type strings for the coordinates
+* `opts.type.value` - array of type strings for the data payload
 * `opts.branchFactor` - branch factor. default: 4
 * `opts.levels` - number of levels in the smallest tree. default: 5
 * `opts.compare(a,b)` - boolean comparison function required for deletes
 
 The dimensionality of the coordinates should match the length of the
 `opts.type.value` length.
+
+The type strings listed in `opts.type.point` and `opts.type.value` can be:
+
+* float32be, float32le, float64be, float64le
+* uint8, uint16be, uint16le, uint32be, uint32le
+* int8, int16be, int16le, int32be, int32le
+
+Any of these types can have a `[n]` quantity at the end. When `n > 1`, the
+corresponding value for the type will be an array except for uint8 which is a
+`Buffer`.
 
 ## bkd.batch(rows, cb)
 
