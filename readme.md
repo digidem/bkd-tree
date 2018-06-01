@@ -108,6 +108,8 @@ The `bbox` should contain all the minimum values for each dimension followed by
 all the maximum values for each dimension. In 2d, the bbox is
 `[minX,minY,maxX,maxY]`, or the more familiar `[west,south,east,north]`.
 
+Values exactly on the border are included in the results.
+
 # install
 
 ```
