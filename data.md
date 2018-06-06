@@ -153,6 +153,19 @@ the size of the first empty tree `S * 2**n` is:
 S * 2**n = S * (2**(n-1) + 2**(n-2) + ... + 2**0 + 1)
 ```
 
+You can prove this property to yourself by thinking about how binary numbers
+work. `2**5` is a 1 followed by 5 zeroes in binary: `100000` which equals 5 ones
+in a row plus one. 5 ones in a row is the same as the sum of each digit
+separately masked out which is the same as a sum of powers of two.
+
+```
+2**5 (decimal)
+ = 100000 (binary)
+ = 11111 + 1 (binary)
+ = (10000 + 01000 + 00100 + 00010 + 00001) + 1 (binary)
+ = 2**4 + 2**3 + 2**2 + 2**1 + 2**0 + 1 (decimal)
+```
+
 # storage
 
 There is a meta storage layer that stores 1024 padded json bytes. The meta data
