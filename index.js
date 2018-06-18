@@ -3,6 +3,7 @@ var calcIndex = require('./lib/calc-index.js')
 var types = require('./lib/types.js')
 var overlapTest = require('bounding-box-overlap-test')
 var once = require('once')
+var pull = require('pull-stream')
 
 module.exports = KD
 
@@ -257,11 +258,10 @@ KD.prototype._getTree = function (i, cb) {
 }
 
 KD.prototype.query = function (query, cb) {
-  cb = once(cb || noop)
   var self = this
-  self.ready(function () {
-    self._query(query, cb)
-  })
+  var stream = self._query(query)
+  if (cb) pull(stream, pull.collect(cb))
+  return stream
 }
 
 KD.prototype._query = function (query, cb) {
@@ -271,77 +271,147 @@ KD.prototype._query = function (query, cb) {
   for (var i = 0; i < dim; i++) q.push([query[i],query[i+dim]])
   var B = self.branchFactor
   var stagingPresize = Math.ceil(self.N/8)
-  self.ready(function () {
-    var results = [], deletes = []
-    for (var i = 0; i < self.staging.count; i++) {
-      var j = Math.floor(4+i/8)
-      var deleted = !((self.staging.buffer[j]>>(i%8))&1)
-      var p = self._types.parse(self.staging.buffer, 4+stagingPresize, i)
-      if (overlapPoint(p.point, query)) {
-        if (deleted) deletes.push(p)
-        else results.push(p)
-      }
-    }
-    if (deletes.length > 0) {
-      results = results.filter(function (r) {
-        for (var i = 0; i < deletes.length; i++) {
-          if (self._compare(r,deletes[i])) return false
-        }
-        return true
-      })
-    }
-    var pending = 1
-    for (var i = 0; i < self.meta.bitfield.length; i++) (function (i) {
-      if (!self.meta.bitfield[i]) return
-      pending++
-      self._getTree(i, function (err, t) {
-        var presize = Math.ceil(t.size/8)*2
-        var len = presize + t.size*self._types.size
-        t.storage.read(0, len, function (err, buf) {
-          if (!buf) buf = Buffer.alloc(presize + t.size*self._types.size)
-          var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
-          var indexes = [0]
-          var depth = 0
-          var range = [[0,0]]
-          var qrange = [null]
-          for (var depth = 0; depth < maxDepth; depth++) {
-            if (indexes.length === 0) break
-            var axis = depth % self._types.dim
-            qrange[0] = q[axis]
-            var nextIndexes = []
-            for (var j = 0; j < indexes.length; j++) {
-              var ix = indexes[j]
-              range[0][0] = -Infinity
-              for (var k = 0; k < B-1; k++) {
-                var empty = !((buf[Math.floor((ix+k)/8)]>>((ix+k)%8))&1)
-                if (empty) continue
-                var deleted = !!((buf[Math.floor((ix+k)/8)+presize/2]>>((ix+k)%8))&1)
-                var p = self._types.parse(buf, presize, ix+k)
-                if (!deleted && overlapPoint(p.point, query)) {
-                  for (var n = 0; n < deletes.length; n++) {
-                    if (self._compare(p, deletes[n])) break
-                  }
-                  if (n === deletes.length) results.push(p)
-                }
-                range[0][1] = p.point[axis]
-                if (overlapTest(range,qrange)) {
-                  nextIndexes.push(calcIndex(B, ix, k))
-                }
-                range[0][0] = p.point[axis]
-              }
-              range[0][1] = +Infinity
-              if (overlapTest(range,qrange)) {
-                nextIndexes.push(calcIndex(B, ix, k))
-              }
-            }
-            indexes = nextIndexes
+
+  var READY = 0, STAGING = 1, TREES = 2
+  var stage = READY
+  var results = [], deletes = []
+  var i = 0
+  var cursors = []
+  var queue = []
+
+  return function read (end, cb) {
+    if (end) return
+    if (stage === READY) {
+      self.ready(function () {
+        var pending = 1
+        for (i = 0; i < self.meta.bitfield.length; i++) (function (i) {
+          if (!self.meta.bitfield[i]) return
+          pending++
+          self._getTree(i, function (err, t) {
+            if (err) return cb(err)
+            cursors.push(fromTree(t, i))
+            if (--pending === 0) ready()
+          })
+        })(i)
+        for (i = 0; i < self.staging.count; i++) {
+          var j = Math.floor(4+i/8)
+          var deleted = !((self.staging.buffer[j]>>(i%8))&1)
+          var p = self._types.parse(self.staging.buffer, 4+stagingPresize, i)
+          if (overlapPoint(p.point, query)) {
+            if (deleted) deletes.push(p)
+            else results.push(p)
           }
-          if (--pending === 0) cb(null, results)
+        }
+        if (deletes.length > 0) {
+          results = results.filter(function (r) {
+            for (var i = 0; i < deletes.length; i++) {
+              if (self._compare(r,deletes[i])) return false
+            }
+            return true
+          })
+        }
+        i = 0
+        if (--pending === 0) ready()
+        function ready () {
+          stage = STAGING
+          read(end, cb)
+        }
+      })
+    } else if (stage === STAGING) {
+      if (i === results.length) {
+        stage = TREES
+        i = 0
+        read(end, cb)
+      } else cb(null, results[i++])
+    } else if (stage === TREES && queue.length > 0) {
+      cb(null, queue.shift())
+    } else if (stage === TREES && cursors.length === 0) {
+      cb(true)
+    } else if (stage === TREES) {
+      if (queue.length > 0) {
+        var q = queue.shift()
+        return cb(null, q[0], q[1])
+      }
+      var first = true
+      cursors.forEach(function (cursor, j) {
+        cursor(end, function (err, value) {
+          if (err === true) {
+            cursors = cursors.filter(function (c) {
+              return c !== cursor
+            })
+            if (cursors.length === 0) cb(true)
+          } else if (first) {
+            first = false
+            if (err) cb(err)
+            else cb(null, value)
+          } else queue.push([err,value])
         })
       })
-    })(i)
-    if (--pending === 0) cb(null, results)
-  })
+    }
+  }
+  function fromTree (t, i) {
+    var presize = Math.ceil(t.size/8)*2
+    var len = presize + t.size*self._types.size
+    var maxDepth = Math.ceil(Math.log(t.size+1)/Math.log(B))
+    var indexes = [0]
+    var depth = 0
+    var range = [[0,0]]
+    var qrange = [null]
+    var buf = null
+    var depth = 0, j = 0, k = 0
+    var nextIndexes = []
+    return function read (end, cb) {
+      if (end) return
+      if (buf === null) {
+        return t.storage.read(0, len, function (err, b) {
+          if (err) return cb(err)
+          if (!b) b = Buffer.alloc(presize + t.size*self._types.size)
+          buf = b
+          read(end, cb)
+        })
+      }
+      if (depth === maxDepth) return cb(true)
+      if (indexes.length === 0) return cb(true)
+      var found = null
+      var axis = depth % self._types.dim
+      qrange[0] = q[axis]
+      var ix = indexes[j]
+      if (k === 0) {
+        range[0][0] = -Infinity
+      }
+      var empty = !((buf[Math.floor((ix+k)/8)]>>((ix+k)%8))&1)
+      if (!empty) {
+        var deleted = !!((buf[Math.floor((ix+k)/8)+presize/2]>>((ix+k)%8))&1)
+        var p = self._types.parse(buf, presize, ix+k)
+        if (!deleted && overlapPoint(p.point, query)) {
+          for (var n = 0; n < deletes.length; n++) {
+            if (self._compare(p, deletes[n])) break
+          }
+          if (n === deletes.length) found = p
+        }
+        range[0][1] = p.point[axis]
+        if (overlapTest(range,qrange)) {
+          nextIndexes.push(calcIndex(B, ix, k))
+        }
+        range[0][0] = p.point[axis]
+      }
+      if (++k === B-1) {
+        range[0][1] = +Infinity
+        if (overlapTest(range,qrange)) {
+          nextIndexes.push(calcIndex(B, ix, k))
+        }
+        k = 0
+        if (++j === indexes.length) {
+          indexes = nextIndexes
+          nextIndexes = []
+          j = 0
+          depth++
+        }
+      }
+      if (found === null) read(end, cb)
+      else cb(null, found)
+    }
+  }
 }
 
 function noop () {}
