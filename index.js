@@ -3,7 +3,8 @@ var calcIndex = require('./lib/calc-index.js')
 var types = require('./lib/types.js')
 var overlapTest = require('bounding-box-overlap-test')
 var once = require('once')
-var pull = require('pull-stream')
+var pull = require('pull-stream/pull.js')
+var collect = require('pull-stream/sinks/collect.js')
 var nextTick = process.nextTick
 
 module.exports = KD
@@ -261,7 +262,7 @@ KD.prototype._getTree = function (i, cb) {
 KD.prototype.query = function (query, cb) {
   var self = this
   var stream = self._query(query)
-  if (cb) pull(stream, pull.collect(cb))
+  if (cb) pull(stream, collect(cb))
   return stream
 }
 
