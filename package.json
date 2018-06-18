@@ -1,6 +1,6 @@
 {
   "name": "bkd-tree",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "main": "index.js",
   "dependencies": {
     "bounding-box-overlap-test": "^1.0.0",
