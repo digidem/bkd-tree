@@ -4,6 +4,7 @@ var types = require('./lib/types.js')
 var overlapTest = require('bounding-box-overlap-test')
 var once = require('once')
 var pull = require('pull-stream')
+var nextTick = process.nextTick
 
 module.exports = KD
 
@@ -322,15 +323,18 @@ KD.prototype._query = function (query, cb) {
         stage = TREES
         i = 0
         read(end, cb)
-      } else cb(null, results[i++])
+      } else nextTick(cb, null, results[i++])
     } else if (stage === TREES && queue.length > 0) {
-      cb(null, queue.shift())
+      var q = queue.shift()
+      if (q[0]) nextTick(cb, q[0])
+      else nextTick(cb, null, q[1])
     } else if (stage === TREES && cursors.length === 0) {
-      cb(true)
+      nextTick(cb, true)
     } else if (stage === TREES) {
       if (queue.length > 0) {
         var q = queue.shift()
-        return cb(null, q[0], q[1])
+        if (q[0]) return nextTick(cb, q[0])
+        else return nextTick(cb, null, q[1])
       }
       var first = true
       cursors.forEach(function (cursor, j) {
@@ -408,8 +412,8 @@ KD.prototype._query = function (query, cb) {
           depth++
         }
       }
-      if (found === null) read(end, cb)
-      else cb(null, found)
+      if (found === null) nextTick(read, end, cb)
+      else nextTick(cb, null, found)
     }
   }
 }
